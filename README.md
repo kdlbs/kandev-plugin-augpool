@@ -1,180 +1,139 @@
-# kandev-plugin-template
+# Kandev Augpool plugin
 
-A starter template for building a [kandev](https://github.com/kdlbs/kandev)
-**native-UI plugin** — its own git repo, packaged into a versioned tarball and
-installed against a running kandev instance. Click **“Use this template”** on
-GitHub (or copy this repo) to bootstrap your own plugin.
+A native [Kandev](https://github.com/kdlbs/kandev) dashboard for
+[Augpool](https://github.com/zeval/augpool) account usage and routing health.
+It shows every account, the active/disabled/cooldown state, 30-day credits,
+weighted score, local selections, and Analytics cache health.
 
-It is a small, complete, working example of everything a kandev plugin can do,
-wired together so you can delete what you don't need rather than assemble it
-from scratch:
+When explicitly enabled, the dashboard can select, enable, disable, reweight,
+import, remove, and export accounts. Every read and mutation goes through the
+installed `augpool` CLI. The plugin never reads Augpool state or credential
+files and never calls Augment Analytics directly.
 
-- **Native nav item + route** — `ui/bundle.js` adds a sidebar entry that opens
-  `/template`, a page rendered natively inside the kandev SPA (not an iframe)
-  using the host's own React instance.
-- **Chat toolbar action** — a component registered into the `chat-input-actions`
-  slot renders an icon button in the chat composer toolbar, with the current
-  `{ sessionId, taskId, taskTitle }` as `slotProps`.
-- **Live WS-driven counter** — a `registerWsHandler("task.created", ...)`
-  handler updates module state that the page re-renders from, live, with no
-  reload.
-- **Backend event handling with Host state** — `OnEvent` counts `task.created`
-  deliveries in a persistent counter via the `Host.GetState`/`SetState` round
-  trip, so restarts don't reset it.
-- **Backend webhook** — `HandleWebhook` answers the `ping` webhook kandev
-  proxies to the plugin, building its reply from the operator settings.
-- **Operator settings (`config_schema`)** — a `greeting` string and a secret
-  `api_token`, rendered as a form at **Settings > Plugins > Template Plugin**
-  and read by the plugin process via `host.GetConfig(ctx)`. Secret fields are
-  vault-stored and masked everywhere outside the plugin process.
+## Trusted-host requirement
 
-## Make it yours
+`management_enabled` is off by default. Enable it only for a single-user
+Kandev instance reachable through loopback or a trusted private network.
 
-The plugin **id** appears in four places that must stay in sync. Rename all of
-them from `kandev-plugin-template` to your own id (e.g. `kandev-plugin-acme`):
+Kandev's plugin webhook relay is currently reachable without a Kandev login.
+Running an Augpool CLI command does not identify the browser that requested
+it. Anyone able to reach the plugin endpoints can read account emails and
+stats; after management is enabled, they can mutate the host-global pool and
+export full credentials. Do not expose this plugin on an untrusted network.
 
-1. `manifest.yaml` — `id`, plus `display_name` / `description` / `author`.
-2. `go.mod` — the `module` line.
-3. `Makefile` — `BIN` and `PKG_OUT` (and `VERSION` to match the manifest).
-4. `ui/bundle.js` — the id passed to `window.registerKandevPlugin(...)`.
+## Requirements
 
-Then trim the scaffolding: drop the webhook / event / config blocks in
-`manifest.yaml` you don't use, delete the matching handlers in
-`server/plugin.go`, and keep only the `registry.register*` calls in
-`ui/bundle.js` your plugin actually contributes. Update `server/plugin_test.go`
-to cover what remains.
+- Kandev with native plugins enabled.
+- Augpool `0.2.0` or newer, providing `stats --json` schema version 1 and the
+  JSON mutation commands.
+- A stable, global Augpool installation visible to the Kandev process. A
+  project virtualenv that Kandev does not activate is insufficient.
 
-## How a plugin runs (gRPC subprocess, not HTTP)
-
-kandev spawns the platform-matching binary from `runtime.executables` in
-`manifest.yaml` as a subprocess and talks to it over a private gRPC connection
-([hashicorp/go-plugin](https://github.com/hashicorp/go-plugin)) — there is no
-HTTP listen address, no shared secret, and no manual wiring: `pluginsdk.Serve`
-in `server/main.go` owns the entire transport. You implement three RPCs and
-get a `Host` handle back:
-
-```go
-type Plugin interface {
-    OnEvent(ctx context.Context, e *Event) error
-    HandleWebhook(ctx context.Context, req *WebhookRequest) (*WebhookResponse, error)
-}
-```
-
-`server/plugin.go`'s `templatePlugin` embeds `pluginsdk.UnimplementedPlugin`
-(a no-op default for both RPCs, plus `Host()`/`SetHost()` accessors) and
-overrides what it needs. `server/main.go` is just
-`pluginsdk.Serve(&templatePlugin{})`.
-
-## Developing against the SDK
-
-`pkg/pluginsdk` is not published as its own module yet, so `go.mod` here uses a
-local `replace`:
-
-```
-replace github.com/kandev/kandev => ../kandev/apps/backend
-```
-
-This assumes your plugin repo is checked out as a **sibling** of the `kandev`
-monorepo:
-
-```
-some-dir/
-├── kandev/                   # https://github.com/kdlbs/kandev, Go module at apps/backend/
-└── kandev-plugin-template/   # this repo
-```
-
-Note the module root is `kandev/apps/backend`, not the repo root — `kandev` is
-a monorepo and the Go backend (including `pkg/pluginsdk`) lives one level down.
-Adjust the `replace` path if your layout differs. Once `pkg/pluginsdk` ships as
-a standalone, versioned module, this repo will drop the `replace` and pin a
-real version instead.
-
-## Layout
-
-```
-manifest.yaml          # plugin manifest — id, capabilities, runtime.executables, ui.bundle, config_schema
-server/
-  main.go              # pluginsdk.Serve wiring — no flags, no HTTP, no secrets
-  plugin.go            # templatePlugin: OnEvent / InvokeTool / HandleWebhook
-  plugin_test.go       # tests against a fake Host, no subprocess spawn needed
-ui/
-  bundle.js            # hand-written, no-build ES module — the plugin's frontend half
-```
-
-`ui/bundle.js` is hand-written, dependency-free ES module JavaScript. There is
-no build step: it ships byte-for-byte inside the package tar.gz, and kandev
-serves it directly. Edit the file and repackage — nothing else to run.
-
-## Build and test
+Recommended Augpool install:
 
 ```sh
-make build   # go build -o bin/... ./server/...
-make test    # go test ./server/...
-make vet     # go vet ./server/...
+pipx install git+https://github.com/zeval/augpool.git
+augpool --version
+augpool stats --json
 ```
 
-> Note: bare `go build ./server/...` (no `-o`) fails with `build output
-> "server" already exists and is a directory` — Go's default output name for a
-> lone main package is the last path element ("server"), which collides with
-> the `server/` source directory. Always pass `-o`, run `go build .` from
-> inside `server/`, or use `make build`. `go vet`/`go test` are unaffected.
+## Settings
 
-## Package it
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `augpool_executable` | empty | Exact executable path. Empty resolves `augpool` from Kandev's `PATH`. Paths with spaces work; this is not shell syntax. |
+| `augpool_home` | empty | Optional root passed as `augpool --home PATH`. Empty keeps Augpool's normal `AUGPOOL_HOME` / `~/.augpool` behavior. |
+| `management_enabled` | `false` | Enables selection, edit, import, removal, and credential export on a trusted host. |
 
-```sh
-make package        # cross-compiles linux/darwin (amd64+arm64) + windows/amd64,
-                    # then packs manifest + ui/ + binaries into a versioned .tar.gz
+The settings page includes a live health card showing the resolved executable,
+Augpool version, home, and read-only/management state.
 
-make package-host   # host platform only — faster local iteration
+## Dashboard behavior
+
+- **Refresh usage** runs `augpool stats --json --refresh`. If Analytics fails,
+  Augpool preserves the last usable cache and the dashboard displays its age
+  plus the new refresh errors.
+- **Select** runs `augpool use EMAIL --json`. It rewrites the configured
+  Augment session for future launches; already-running ACP/CLI processes do
+  not switch credentials.
+- **Edit** enables/disables an account and sets a positive routing weight
+  through `augpool update`.
+- **Import** sends the share blob to `augpool import - --json` on stdin. The
+  credential never appears in process arguments and is cleared from UI state
+  after submission.
+- **Remove** requires typing the complete account email.
+- **Export** runs `augpool export EMAIL`, copies the returned base64url token
+  once, then immediately discards it. The token is never rendered. On browsers
+  without the Clipboard API, a temporary hidden textarea fallback is removed
+  immediately; if both methods fail, use `augpool export EMAIL` in a trusted
+  terminal.
+
+An Augpool share blob is a full credential. Use disposable accounts for tests,
+never paste a production blob into logs or issue trackers, and rotate anything
+exposed accidentally.
+
+## Architecture
+
+```text
+native Kandev page
+  -> Kandev plugin webhook relay
+  -> kandev-augpool Go subprocess
+  -> exec.CommandContext(executable, args...)  # no shell
+  -> installed augpool CLI
+  -> Augpool pool/state/cache and Augment Analytics
 ```
 
-Both stage `manifest.yaml` + `ui/` alongside the freshly built
-`server/plugin-<goos>-<goarch>[.exe]` binaries, then pack the tree with
-`github.com/kandev/kandev/cmd/plugin-pack` (resolved through this repo's
-`replace` directive), which computes `checksums.txt` and writes the tarball.
+Command output and request bodies are bounded. Refresh has a longer timeout
+than local mutations. Plugin-originated actions are serialized to prevent
+double-click races. Augpool remains the authority for account identity,
+ranking, atomic persistence, credential validation, and Analytics caching.
 
-## Install it against a running kandev
+## Develop
 
-Either through the UI (**Settings > Plugins > Install plugin**, URL or file
-upload), or directly:
+The Kandev backend SDK is currently consumed from a sibling monorepo checkout:
+
+```text
+work/
+├── kandev/                    # github.com/kdlbs/kandev
+└── kandev-plugin-augpool/     # this repo
+```
+
+Then run:
 
 ```sh
-curl -F package=@kandev-plugin-template-0.1.0.tar.gz \
+make test
+make vet
+make package-host
+```
+
+`make test` runs Go backend tests, dependency-free Node bundle tests, CSS
+contract tests, and JavaScript syntax validation. `make package-host` writes
+`kandev-augpool-0.1.0.tar.gz` for the current OS/architecture.
+
+Install the package through **Settings → Plugins → Install plugin**, enable it,
+then configure its executable/home. A direct local install is also possible:
+
+```sh
+curl -F package=@kandev-augpool-0.1.0.tar.gz \
   http://localhost:<kandev-port>/api/plugins/install
 ```
 
-kandev verifies `checksums.txt`, validates the manifest, extracts the package,
-spawns the host-matching binary, and — once the go-plugin handshake completes —
-marks the plugin active. Sideloaded plugins register **disabled/unverified**;
-enable yours in **Settings > Plugins** (the `plugins` feature flag must be on).
-Reinstalling the same version returns 409 — bump `version` in `manifest.yaml`.
+## Disposable smoke test
 
-## Publish a release
+1. Verify missing-CLI, empty-pool, default-PATH, configured-path, and configured-home states.
+2. Import two disposable share blobs and compare dashboard order with `augpool stats --json`.
+3. Disable/re-enable, change weight, select active, and force an Analytics refresh.
+4. Export a disposable account and compare clipboard content with CLI output; inspect the DOM/logs to confirm the token is absent.
+5. Try incorrect/correct removal confirmation, then check phone, tablet, and desktop layouts.
+6. Disable/re-enable the plugin and confirm its nav, route, and settings slot unregister/re-register cleanly.
 
-Pull requests run `.github/workflows/ci.yml` (tidy, format, vet, and test) and
-`.github/workflows/build.yml` (host build plus a five-platform package). Push a
-tag that matches the manifest version to run `.github/workflows/release.yml`:
-it repeats verification, cross-compiles all platforms, packs the tarball, and
-creates a GitHub Release with the two assets the kandev
-[marketplace](https://github.com/kdlbs/kandev/blob/main/docs/public/plugins-marketplace.md)
-install pipeline expects:
+## Release
 
-- `<id>-<version>.tar.gz` — the plugin package (with its own internal
-  `checksums.txt` verified on install), and
-- `checksums.txt` — the package's internal file checksums, extracted from the
-  tarball for inspection and marketplace tooling.
-
-```sh
-# bump VERSION in Makefile + version in manifest.yaml first, then:
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-The workflow checks out the kandev monorepo as a sibling so the `replace`
-directive resolves (see "Developing against the SDK"); pin a kandev ref in the
-workflow if you need reproducible SDK versions.
+The included workflows verify and cross-compile Linux/macOS amd64+arm64 and
+Windows amd64 packages. Dispatch the release workflow from `main` or push a
+matching SemVer tag. Marketplace registry inclusion should happen only after
+the release exists and the trusted-host credential-export risk is reviewed.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). This template is meant to be copied and made your
-own; your resulting plugin can carry whatever license you choose.
+MIT — see [LICENSE](LICENSE).

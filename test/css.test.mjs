@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("Augpool styles stay scoped, responsive, and motion-safe", async () => {
+  const css = await readFile(new URL("../ui/plugin.css", import.meta.url), "utf8");
+  const selectors = css
+    .split("{")
+    .slice(0, -1)
+    .map((part) => part.split("}").at(-1).trim())
+    .filter((selector) => selector && !selector.startsWith("@"));
+
+  assert.equal(selectors.every((selector) => selector.includes(".kandev-augpool")), true);
+  assert.match(css, /font-variant-numeric:\s*tabular-nums/);
+  assert.match(css, /min-height:\s*40px/);
+  assert.match(css, /@media\s*\(max-width:\s*720px\)/);
+  assert.match(css, /transition:\s*(?:transform|background-color|border-color|color)/);
+  assert.doesNotMatch(css, /transition:\s*all/i);
+  assert.match(css, /transform:\s*scale\(0\.96\)/);
+});

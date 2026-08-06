@@ -2,10 +2,10 @@
 
 # When you rename the plugin, update BIN and VERSION to match manifest.yaml's
 # id and version (PKG_OUT is derived from them).
-BIN := bin/kandev-plugin-template
+BIN := bin/kandev-augpool
 VERSION := 0.1.0
 STAGE := .build/stage
-PKG_OUT := kandev-plugin-template-$(VERSION).tar.gz
+PKG_OUT := kandev-augpool-$(VERSION).tar.gz
 
 ## Build the plugin binary for the host platform (development use). kandev
 ## itself always installs from `make package`/`package-host` output, not this.
@@ -21,6 +21,8 @@ run: build
 
 test:
 	go test ./server/...
+	node --test test/*.test.mjs
+	node --check ui/bundle.js
 
 fmt:
 	gofmt -l .
@@ -60,4 +62,4 @@ package-host:
 	@echo "Wrote $(PKG_OUT)"
 
 clean:
-	rm -rf bin $(STAGE) kandev-plugin-template-*.tar.gz
+	rm -rf bin $(STAGE) kandev-augpool-*.tar.gz

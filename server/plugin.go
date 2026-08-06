@@ -1,107 +1,336 @@
 package main
 
 import (
+	"bytes"
 	"context"
-	"fmt"
-	"log"
+	"encoding/json"
+	"errors"
+	"math"
+	"mime"
+	"net/url"
+	"strings"
+	"sync"
 
 	"github.com/kandev/kandev/pkg/pluginsdk"
 )
 
-// eventCountStateKey is the Host state key this template uses to demonstrate
-// the GetState/SetState round trip: every task.created delivery increments a
-// persistent counter kept in kandev's state store, scoped to this plugin
-// instance. Delete this (and OnEvent) if your plugin doesn't handle events.
-const eventCountStateKey = "event_count"
+const maxActionBody = 64 << 10
 
-// templatePlugin implements pluginsdk.Plugin (via UnimplementedPlugin). It is
-// the one type you customize on the backend side: embed UnimplementedPlugin
-// for no-op defaults, then override only the RPCs you need
-// (OnEvent / HandleWebhook). Rename it to match your plugin.
-type templatePlugin struct {
-	pluginsdk.UnimplementedPlugin
+type augpoolService interface {
+	Status(context.Context) (CLIStatus, error)
+	Stats(context.Context, bool) (*StatsSnapshot, error)
+	Use(context.Context, string) error
+	Update(context.Context, string, *bool, *float64) error
+	Import(context.Context, string, bool) error
+	Remove(context.Context, string) error
+	Export(context.Context, string) (string, error)
 }
 
-var _ pluginsdk.Plugin = (*templatePlugin)(nil)
+type pluginConfig struct {
+	Executable        string
+	Home              string
+	ManagementEnabled bool
+}
 
-// OnEvent is called for every event type declared in manifest.yaml's
-// capabilities.events. Here it logs the delivery and, when a Host has been
-// injected, increments a persistent counter through Host state. Returning an
-// error asks kandev to retry the delivery; return nil to acknowledge.
-func (p *templatePlugin) OnEvent(ctx context.Context, e *pluginsdk.Event) error {
-	log.Printf("event delivered: type=%s id=%s", e.EventType, e.EventID)
+type serviceFactory func(pluginConfig) augpoolService
 
-	host := p.Host()
-	if host == nil {
-		// Host not injected yet (e.g. the broker dial is still in
-		// progress) — nothing more to do for this delivery.
+type augpoolPlugin struct {
+	pluginsdk.UnimplementedPlugin
+	factory  serviceFactory
+	actionMu sync.Mutex
+}
+
+var _ pluginsdk.Plugin = (*augpoolPlugin)(nil)
+
+type dashboardResponse struct {
+	CLI               CLIStatus      `json:"cli"`
+	ManagementEnabled bool           `json:"management_enabled"`
+	Snapshot          *StatsSnapshot `json:"snapshot"`
+}
+
+type actionRequest struct {
+	Action string   `json:"action"`
+	Email  string   `json:"email"`
+	Weight *float64 `json:"weight"`
+	Blob   string   `json:"blob"`
+	Force  *bool    `json:"force"`
+}
+
+func newPlugin() *augpoolPlugin {
+	return newAugpoolPlugin(func(config pluginConfig) augpoolService {
+		return NewAugpoolCLI(CLIOptions{
+			Executable: config.Executable,
+			Home:       config.Home,
+		})
+	})
+}
+
+func newAugpoolPlugin(factory serviceFactory) *augpoolPlugin {
+	return &augpoolPlugin{factory: factory}
+}
+
+func (p *augpoolPlugin) HandleWebhook(
+	ctx context.Context,
+	req *pluginsdk.WebhookRequest,
+) (*pluginsdk.WebhookResponse, error) {
+	switch req.WebhookKey {
+	case "stats":
+		return p.handleStats(ctx, req), nil
+	case "action":
+		return p.handleAction(ctx, req), nil
+	default:
+		return errorResponse(404, "Webhook not found"), nil
+	}
+}
+
+func (p *augpoolPlugin) handleStats(
+	ctx context.Context,
+	req *pluginsdk.WebhookRequest,
+) *pluginsdk.WebhookResponse {
+	if req.Method != "GET" {
+		return methodNotAllowed("GET")
+	}
+	refresh, err := parseRefreshQuery(req.Query)
+	if err != nil {
+		return errorResponse(400, "Query must be empty or refresh=1")
+	}
+	config, err := p.config(ctx)
+	if err != nil {
+		return errorResponse(502, "Could not read plugin settings")
+	}
+	return p.dashboard(ctx, p.factory(config), config, refresh)
+}
+
+func parseRefreshQuery(raw string) (bool, error) {
+	if raw == "" {
+		return false, nil
+	}
+	query, err := url.ParseQuery(raw)
+	if err != nil || len(query) != 1 {
+		return false, errors.New("invalid query")
+	}
+	values, ok := query["refresh"]
+	if !ok || len(values) != 1 || values[0] != "1" {
+		return false, errors.New("invalid refresh value")
+	}
+	return true, nil
+}
+
+func (p *augpoolPlugin) handleAction(
+	ctx context.Context,
+	req *pluginsdk.WebhookRequest,
+) *pluginsdk.WebhookResponse {
+	if req.Method != "POST" {
+		return methodNotAllowed("POST")
+	}
+	if !isJSONContentType(header(req.Headers, "Content-Type")) {
+		return errorResponse(400, "Content-Type must be application/json")
+	}
+	config, err := p.config(ctx)
+	if err != nil {
+		return errorResponse(502, "Could not read plugin settings")
+	}
+	if !config.ManagementEnabled {
+		return errorResponse(403, "Account management is disabled in plugin settings")
+	}
+	action, err := decodeAction(req.Body)
+	if err != nil {
+		return errorResponse(400, err.Error())
+	}
+
+	p.actionMu.Lock()
+	defer p.actionMu.Unlock()
+	service := p.factory(config)
+	if action.Action == "export" {
+		blob, err := service.Export(ctx, action.Email)
+		if err != nil {
+			return backendError(err)
+		}
+		return jsonResponse(200, map[string]string{"blob": blob})
+	}
+	if err := executeAction(ctx, service, action); err != nil {
+		return backendError(err)
+	}
+	return p.dashboard(ctx, service, config, false)
+}
+
+func executeAction(ctx context.Context, service augpoolService, action actionRequest) error {
+	switch action.Action {
+	case "select":
+		return service.Use(ctx, action.Email)
+	case "enable":
+		enabled := true
+		return service.Update(ctx, action.Email, &enabled, nil)
+	case "disable":
+		enabled := false
+		return service.Update(ctx, action.Email, &enabled, nil)
+	case "weight":
+		return service.Update(ctx, action.Email, nil, action.Weight)
+	case "import":
+		force := action.Force != nil && *action.Force
+		return service.Import(ctx, action.Blob, force)
+	case "remove":
+		return service.Remove(ctx, action.Email)
+	default:
+		return errors.New("unsupported action")
+	}
+}
+
+func decodeAction(body []byte) (actionRequest, error) {
+	if len(body) == 0 || len(body) > maxActionBody {
+		return actionRequest{}, errors.New("Request body is empty or too large")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	var action actionRequest
+	if err := decoder.Decode(&action); err != nil {
+		return actionRequest{}, errors.New("Request body must be one JSON object")
+	}
+	if err := ensureEOF(decoder); err != nil {
+		return actionRequest{}, errors.New("Request body must be one JSON object")
+	}
+	if err := validateAction(action); err != nil {
+		return actionRequest{}, err
+	}
+	return action, nil
+}
+
+func validateAction(action actionRequest) error {
+	requireEmail := func() error {
+		if action.Email == "" || action.Email != strings.TrimSpace(action.Email) ||
+			!strings.Contains(action.Email, "@") || strings.ContainsAny(action.Email, " \t\r\n") {
+			return errors.New("A full account email is required")
+		}
+		return nil
+	}
+	noImportFields := func() error {
+		if action.Blob != "" || action.Force != nil {
+			return errors.New("Action contains fields it does not use")
+		}
 		return nil
 	}
 
-	count, err := incrementEventCount(ctx, host)
-	if err != nil {
-		return fmt.Errorf("kandev-plugin-template: updating event count in Host state: %w", err)
+	switch action.Action {
+	case "select", "enable", "disable", "remove", "export":
+		if err := requireEmail(); err != nil {
+			return err
+		}
+		if action.Weight != nil || noImportFields() != nil {
+			return errors.New("Action contains fields it does not use")
+		}
+	case "weight":
+		if err := requireEmail(); err != nil {
+			return err
+		}
+		if action.Weight == nil || *action.Weight <= 0 || math.IsNaN(*action.Weight) || math.IsInf(*action.Weight, 0) {
+			return errors.New("Weight must be a finite number greater than zero")
+		}
+		if err := noImportFields(); err != nil {
+			return err
+		}
+	case "import":
+		if action.Email != "" || action.Weight != nil {
+			return errors.New("Import contains fields it does not use")
+		}
+		if len(action.Blob) == 0 || len(action.Blob) > maxActionBody/2 || !base64URLToken.MatchString(action.Blob) {
+			return errors.New("Import blob must be one base64url token")
+		}
+	default:
+		return errors.New("Unsupported action")
 	}
-	log.Printf("events counted via Host state: %d", count)
 	return nil
 }
 
-// incrementEventCount reads the current count from Host state (0 if unset),
-// writes back count+1, and returns the new count. Note numbers come back from
-// Host state as float64 (the values round-trip through a protobuf Struct on
-// the wire), so read them as float64 before converting.
-func incrementEventCount(ctx context.Context, host pluginsdk.Host) (int, error) {
-	value, found, err := host.GetState(ctx, "instance", "", eventCountStateKey)
+func (p *augpoolPlugin) dashboard(
+	ctx context.Context,
+	service augpoolService,
+	config pluginConfig,
+	refresh bool,
+) *pluginsdk.WebhookResponse {
+	status, err := service.Status(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("reading %s: %w", eventCountStateKey, err)
+		return backendError(err)
 	}
-
-	count := 0
-	if found {
-		if c, ok := value["count"].(float64); ok {
-			count = int(c)
-		}
+	snapshot, err := service.Stats(ctx, refresh)
+	if err != nil {
+		return backendError(err)
 	}
-	count++
-
-	if err := host.SetState(ctx, "instance", "", eventCountStateKey, map[string]any{"count": count}); err != nil {
-		return 0, fmt.Errorf("writing %s: %w", eventCountStateKey, err)
-	}
-	return count, nil
+	return jsonResponse(200, dashboardResponse{
+		CLI:               status,
+		ManagementEnabled: config.ManagementEnabled,
+		Snapshot:          snapshot,
+	})
 }
 
-// HandleWebhook implements the webhooks declared in manifest.yaml. kandev
-// proxies POST /api/plugins/<id>/webhooks/<key> here; dispatch on
-// req.WebhookKey and return the status/body kandev should send back. This one
-// answers with a greeting built from the operator-configured settings, to
-// show a config read end to end.
-func (p *templatePlugin) HandleWebhook(ctx context.Context, req *pluginsdk.WebhookRequest) (*pluginsdk.WebhookResponse, error) {
-	log.Printf("webhook received: key=%s method=%s body=%s", req.WebhookKey, req.Method, string(req.Body))
-	body := fmt.Sprintf("%s, webhook!", p.greeting(ctx))
-	return &pluginsdk.WebhookResponse{Status: 200, Body: []byte(body)}, nil
-}
-
-// greeting reads this plugin's operator-editable settings through the Host
-// GetConfig RPC — the values saved on the plugin's settings page (the
-// manifest's config_schema). kandev restarts the plugin process whenever the
-// operator saves, so reading on demand always observes the current values.
-// Config is best-effort here: with no Host injected yet, or on an RPC error,
-// the greeting falls back to "Hello". A secret field like api_token arrives
-// in cleartext through this same call — the only surface where its real value
-// is visible.
-func (p *templatePlugin) greeting(ctx context.Context) string {
-	const fallback = "Hello"
+func (p *augpoolPlugin) config(ctx context.Context) (pluginConfig, error) {
 	host := p.Host()
 	if host == nil {
-		return fallback
+		return pluginConfig{}, nil
 	}
-	config, err := host.GetConfig(ctx)
+	values, err := host.GetConfig(ctx)
 	if err != nil {
-		log.Printf("reading plugin config: %v", err)
-		return fallback
+		return pluginConfig{}, err
 	}
-	if greeting, _ := config["greeting"].(string); greeting != "" {
-		return greeting
+	config := pluginConfig{}
+	config.Executable, _ = values["augpool_executable"].(string)
+	config.Home, _ = values["augpool_home"].(string)
+	config.ManagementEnabled, _ = values["management_enabled"].(bool)
+	config.Executable = strings.TrimSpace(config.Executable)
+	config.Home = strings.TrimSpace(config.Home)
+	return config, nil
+}
+
+func isJSONContentType(value string) bool {
+	mediaType, _, err := mime.ParseMediaType(value)
+	return err == nil && mediaType == "application/json"
+}
+
+func header(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
 	}
-	return fallback
+	return ""
+}
+
+func backendError(err error) *pluginsdk.WebhookResponse {
+	switch {
+	case errors.Is(err, ErrAccountNotFound):
+		return errorResponse(404, "Account not found")
+	case errors.Is(err, ErrTimedOut):
+		return errorResponse(504, "Augpool command timed out")
+	case errors.Is(err, ErrCLIUnavailable):
+		return errorResponse(502, "Augpool CLI not found; check plugin executable and PATH settings")
+	case errors.Is(err, ErrUnsupportedSchema):
+		return errorResponse(502, "Augpool stats schema is incompatible; upgrade Augpool or this plugin")
+	default:
+		return errorResponse(502, "Augpool command failed")
+	}
+}
+
+func methodNotAllowed(allow string) *pluginsdk.WebhookResponse {
+	response := errorResponse(405, "Method not allowed")
+	response.Headers["Allow"] = allow
+	return response
+}
+
+func errorResponse(status int32, message string) *pluginsdk.WebhookResponse {
+	return jsonResponse(status, map[string]string{"error": message})
+}
+
+func jsonResponse(status int32, payload any) *pluginsdk.WebhookResponse {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		status = 500
+		body = []byte(`{"error":"Response encoding failed"}`)
+	}
+	return &pluginsdk.WebhookResponse{
+		Status: status,
+		Headers: map[string]string{
+			"Content-Type":  "application/json",
+			"Cache-Control": "no-store",
+		},
+		Body: body,
+	}
 }
