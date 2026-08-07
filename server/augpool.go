@@ -10,7 +10,9 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -104,10 +106,31 @@ func (c *AugpoolCLI) resolveExecutable() (string, error) {
 		return c.executable, nil
 	}
 	resolved, err := c.lookPath("augpool")
-	if err != nil {
-		return "", fmt.Errorf("%w: install augpool on Kandev's PATH or configure augpool_executable", ErrCLIUnavailable)
+	if err == nil {
+		return resolved, nil
 	}
-	return resolved, nil
+	for _, candidate := range defaultExecutableCandidates() {
+		resolved, candidateErr := c.lookPath(candidate)
+		if candidateErr == nil {
+			return resolved, nil
+		}
+	}
+	return "", fmt.Errorf("%w: install augpool on Kandev's PATH or configure augpool_executable", ErrCLIUnavailable)
+}
+
+func defaultExecutableCandidates() []string {
+	name := "augpool"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	candidates := make([]string, 0, 3)
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "bin", name))
+	}
+	if runtime.GOOS != "windows" {
+		candidates = append(candidates, "/opt/homebrew/bin/augpool", "/usr/local/bin/augpool")
+	}
+	return candidates
 }
 
 func (c *AugpoolCLI) args(values ...string) []string {

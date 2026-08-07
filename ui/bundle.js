@@ -773,7 +773,7 @@ window.registerKandevPlugin(PLUGIN_ID, {
       label: "Augpool",
       path: "/augpool",
       icon: "chart",
-      section: "main",
+      section: "integrations",
     });
     registry.registerRoute(
       "/augpool",

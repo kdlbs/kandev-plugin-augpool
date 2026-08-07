@@ -132,6 +132,7 @@ test("registers the Augpool nav, native route, and settings health slot", () => 
     ],
   );
   assert.equal(calls[0][1].icon, "chart");
+  assert.equal(calls[0][1].section, "integrations");
   assert.equal(calls[1][1].options.topbar.subtitle, "Account usage and routing health");
 });
 

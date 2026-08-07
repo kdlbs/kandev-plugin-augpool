@@ -6,6 +6,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -88,6 +90,35 @@ func TestAugpoolCLIStatsUsesResolvedExecutableHomeAndExactArgs(t *testing.T) {
 	require.Empty(t, runner.commands[0].Stdin)
 	require.Positive(t, runner.commands[0].StdoutLimit)
 	require.Positive(t, runner.commands[0].StderrLimit)
+}
+
+func TestAugpoolCLIFindsUserInstallWhenProcessPathMissesCLI(t *testing.T) {
+	home := t.TempDir()
+	name := "augpool"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	userExecutable := filepath.Join(home, ".local", "bin", name)
+	lookups := []string{}
+	runner := &recordingRunner{output: CLIOutput{Stdout: []byte("augpool 0.2.0\n")}}
+	client := NewAugpoolCLI(CLIOptions{
+		Runner: runner,
+		LookPath: func(name string) (string, error) {
+			lookups = append(lookups, name)
+			if name == userExecutable {
+				return name, nil
+			}
+			return "", exec.ErrNotFound
+		},
+	})
+	t.Setenv("HOME", home)
+
+	status, err := client.Status(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, userExecutable, status.Executable)
+	require.Contains(t, lookups, "augpool")
+	require.Contains(t, lookups, userExecutable)
+	require.Equal(t, userExecutable, runner.commands[0].Executable)
 }
 
 func TestAugpoolCLIRealLifecycleIntegration(t *testing.T) {

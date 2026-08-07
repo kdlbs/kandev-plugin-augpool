@@ -34,7 +34,7 @@ config_schema:
     augpool_executable:
       type: string
       title: "Augpool executable"
-      description: "Optional exact executable path. Empty resolves augpool from the Kandev process PATH."
+      description: "Optional exact executable path. Empty checks the Kandev process PATH, ~/.local/bin, and standard Homebrew locations."
       default: ""
     augpool_home:
       type: string

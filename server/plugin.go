@@ -301,7 +301,7 @@ func backendError(err error) *pluginsdk.WebhookResponse {
 	case errors.Is(err, ErrTimedOut):
 		return errorResponse(504, "Augpool command timed out")
 	case errors.Is(err, ErrCLIUnavailable):
-		return errorResponse(502, "Augpool CLI not found; check plugin executable and PATH settings")
+		return errorResponse(502, "Augpool CLI not found. In plugin settings, set Augpool executable to the absolute path reported by command -v augpool (where augpool on Windows).")
 	case errors.Is(err, ErrUnsupportedSchema):
 		return errorResponse(502, "Augpool stats schema is incompatible; upgrade Augpool or this plugin")
 	default:

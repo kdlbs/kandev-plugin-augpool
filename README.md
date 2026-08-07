@@ -41,7 +41,7 @@ augpool stats --json
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `augpool_executable` | empty | Exact executable path. Empty resolves `augpool` from Kandev's `PATH`. Paths with spaces work; this is not shell syntax. |
+| `augpool_executable` | empty | Exact executable path. Empty checks Kandev's `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. Paths with spaces work; this is not shell syntax. |
 | `augpool_home` | empty | Optional root passed as `augpool --home PATH`. Empty keeps Augpool's normal `AUGPOOL_HOME` / `~/.augpool` behavior. |
 | `management_enabled` | `false` | Enables selection, edit, import, removal, and credential export on a trusted host. |
 

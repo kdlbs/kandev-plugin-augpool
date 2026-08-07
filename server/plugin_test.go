@@ -283,3 +283,12 @@ func TestWebhookMapsKnownBackendErrors(t *testing.T) {
 		require.NotContains(t, string(response.Body), "credential")
 	}
 }
+
+func TestMissingCLIErrorExplainsAbsolutePathSetting(t *testing.T) {
+	response := backendError(ErrCLIUnavailable)
+
+	require.Equal(t, int32(502), response.Status)
+	require.JSONEq(t, `{
+		"error": "Augpool CLI not found. In plugin settings, set Augpool executable to the absolute path reported by command -v augpool (where augpool on Windows)."
+	}`, string(response.Body))
+}
