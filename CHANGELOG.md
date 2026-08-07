@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1] - 2026-08-07
+
+### Fixed
+
+- Place Augpool inside Kandev's Integrations navigation section.
+- Find common pipx and Homebrew Augpool installations when the Kandev process PATH is minimal.
+- Give an actionable absolute-path remedy when the Augpool CLI remains unavailable.
+
 ## [0.1.0] - 2026-08-06
 
 ### Added
