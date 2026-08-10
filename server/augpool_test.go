@@ -100,7 +100,7 @@ func TestAugpoolCLIFindsUserInstallWhenProcessPathMissesCLI(t *testing.T) {
 	}
 	userExecutable := filepath.Join(home, ".local", "bin", name)
 	lookups := []string{}
-	runner := &recordingRunner{output: CLIOutput{Stdout: []byte("augpool 0.2.0\n")}}
+	runner := &recordingRunner{output: CLIOutput{Stdout: []byte("augpool 0.3.0\n")}}
 	client := NewAugpoolCLI(CLIOptions{
 		Runner: runner,
 		LookPath: func(name string) (string, error) {
@@ -121,6 +121,15 @@ func TestAugpoolCLIFindsUserInstallWhenProcessPathMissesCLI(t *testing.T) {
 	require.Equal(t, userExecutable, runner.commands[0].Executable)
 }
 
+func TestAugpoolCLIRejectsVersionWithoutMachineAPI(t *testing.T) {
+	runner := &recordingRunner{output: CLIOutput{Stdout: []byte("augpool 0.2.0\n")}}
+	client := NewAugpoolCLI(CLIOptions{Executable: "augpool", Runner: runner})
+
+	_, err := client.Status(context.Background())
+	require.ErrorIs(t, err, ErrUnsupportedVersion)
+	require.Contains(t, err.Error(), "0.3.0")
+}
+
 func TestAugpoolCLIRealLifecycleIntegration(t *testing.T) {
 	executable := os.Getenv("AUGPOOL_INTEGRATION_EXECUTABLE")
 	if executable == "" {
@@ -130,7 +139,7 @@ func TestAugpoolCLIRealLifecycleIntegration(t *testing.T) {
 
 	status, err := client.Status(context.Background())
 	require.NoError(t, err)
-	require.Contains(t, status.Version, "augpool 0.2.")
+	require.Equal(t, "augpool 0.3.0", status.Version)
 
 	shareJSON := `{"v":2,"email":"disposable@example.com","label":"Disposable","session":{"accessToken":"disposable-test-token","tenantURL":"https://e5.api.augmentcode.com/","scopes":[]}}`
 	shareBlob := base64.RawURLEncoding.EncodeToString([]byte(shareJSON))

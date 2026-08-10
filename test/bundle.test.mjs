@@ -45,7 +45,7 @@ function response(payload, status = 200) {
 
 function dashboard(active = "alice@example.com") {
   return {
-    cli: { executable: "/usr/bin/augpool", version: "augpool 0.2.0", home: "" },
+    cli: { executable: "/usr/bin/augpool", version: "augpool 0.3.0", home: "" },
     management_enabled: true,
     snapshot: {
       schema_version: 1,
