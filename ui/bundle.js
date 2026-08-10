@@ -340,6 +340,15 @@ function AccountsTable({ host, controller, state, accounts, onEdit, onRemove }) 
   const ui = host.ui;
   const { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Card, CardContent } = ui;
   const actionProps = (account) => ({ host, controller, state, account, onEdit, onRemove });
+  const columns = [
+    { label: "Account" },
+    { label: "Credits", alignEnd: true },
+    { label: "Weight", alignEnd: true },
+    { label: "Score", alignEnd: true },
+    { label: "Local uses", alignEnd: true },
+    { label: "Last selected" },
+    { label: "Actions", alignEnd: true },
+  ];
 
   const desktop = h(
     "div",
@@ -353,8 +362,15 @@ function AccountsTable({ host, controller, state, accounts, onEdit, onRemove }) 
         h(
           TableRow,
           null,
-          ...["Account", "Credits", "Weight", "Score", "Local uses", "Last selected", "Actions"].map(
-            (label) => h(TableHead, { key: label }, label),
+          ...columns.map(
+            (column) => h(
+              TableHead,
+              {
+                key: column.label,
+                className: column.alignEnd ? "kandev-augpool__align-end" : undefined,
+              },
+              column.label,
+            ),
           ),
         ),
       ),
