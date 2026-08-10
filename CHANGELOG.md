@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4] - 2026-08-10
+
+### Changed
+
+- fix(ui): refresh settings state and card layout (cd905c1)
+
+
 ## [0.1.3] - 2026-08-10
 
 ### Changed
