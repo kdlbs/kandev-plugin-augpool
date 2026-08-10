@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5] - 2026-08-10
+
+### Changed
+
+- fix(ui): polish settings and account controls (d13b845)
+
+
 ## [0.1.4] - 2026-08-10
 
 ### Changed
