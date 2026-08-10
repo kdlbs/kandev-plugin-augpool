@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3] - 2026-08-10
+
+### Changed
+
+- fix(ui): align account table columns (dcbb28e)
+
+
 ## [0.1.2] - 2026-08-10
 
 ### Changed
