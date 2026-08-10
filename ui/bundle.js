@@ -174,6 +174,12 @@ function useDashboardState(React, controller) {
   return state;
 }
 
+function useControllerLoadOnMount(React, controller) {
+  React.useEffect(() => {
+    if (controller.getState().phase !== "loading") controller.load();
+  }, [controller]);
+}
+
 async function copyCredentialBlob(blob, environment = globalThis) {
   if (environment.navigator?.clipboard?.writeText) {
     try {
@@ -649,9 +655,7 @@ function AugpoolPage({ host, controller }) {
   const [importOpen, setImportOpen] = React.useState(false);
   const [editAccount, setEditAccount] = React.useState(null);
   const [removeAccount, setRemoveAccount] = React.useState(null);
-  React.useEffect(() => {
-    if (controller.getState().phase === "idle") controller.load();
-  }, [controller]);
+  useControllerLoadOnMount(React, controller);
 
   const data = state.data;
   const snapshot = data?.snapshot;
@@ -739,9 +743,7 @@ function PluginSettingsHealth({ host, controller }) {
   const React = host.React;
   const { Alert, AlertDescription, AlertTitle, Badge, Button } = host.ui;
   const state = useDashboardState(React, controller);
-  React.useEffect(() => {
-    if (controller.getState().phase === "idle") controller.load();
-  }, [controller]);
+  useControllerLoadOnMount(React, controller);
   if (!state.data) {
     return h(Alert, { variant: state.error ? "destructive" : undefined },
       h(AlertTitle, null, state.error ? "Augpool CLI unavailable" : "Checking Augpool CLI…"),

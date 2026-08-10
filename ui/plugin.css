@@ -288,9 +288,11 @@
 
 .kandev-augpool__settings-health {
   display: flex;
+  max-width: none;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  margin-inline: 0;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 14px;

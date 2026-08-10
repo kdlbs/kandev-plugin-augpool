@@ -27,3 +27,12 @@ test("desktop table cells use a comfortable shared horizontal inset", async () =
     /\.kandev-augpool__table-wrap th,\s*\.kandev-augpool__table-wrap td\s*{[^}]*padding-inline:\s*16px/,
   );
 });
+
+test("settings health card fills the host settings column", async () => {
+  const css = await readFile(new URL("../ui/plugin.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.kandev-augpool__settings-health\s*{[^}]*max-width:\s*none;[^}]*margin-inline:\s*0;/,
+  );
+});

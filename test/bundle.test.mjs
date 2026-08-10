@@ -23,6 +23,8 @@ function loadBundle() {
   vm.runInContext(
     `${source}\n;globalThis.__augpoolTest = {
       AccountsTable,
+      AugpoolPage,
+      PluginSettingsHealth,
       createDashboardController,
       copyCredentialBlob,
       deriveSummary,
@@ -188,6 +190,139 @@ test("desktop table headings align with numeric values and actions", () => {
   }
   assert.equal(headings[0].props.className, undefined);
   assert.equal(headings[5].props.className, undefined);
+});
+
+test("dashboard route revalidates ready controller state when mounted", () => {
+  const effects = [];
+  const ready = dashboard();
+  let loads = 0;
+  const controller = {
+    getState: () => ({
+      phase: "ready",
+      data: ready,
+      error: null,
+      refreshing: false,
+      pendingAction: null,
+      copyState: null,
+      copiedEmail: null,
+    }),
+    subscribe: () => () => {},
+    load() {
+      loads += 1;
+    },
+  };
+  const host = {
+    React: {
+      useEffect(effect) {
+        effects.push(effect);
+      },
+      useState(initial) {
+        return [initial, () => {}];
+      },
+    },
+    ui: {
+      Alert: "alert",
+      AlertDescription: "alert-description",
+      AlertTitle: "alert-title",
+      Button: "button",
+      Card: "card",
+      CardContent: "card-content",
+    },
+    jsx(type, props, ...children) {
+      return { type, props: props ?? {}, children };
+    },
+  };
+  const { hooks } = loadBundle();
+
+  hooks.AugpoolPage({ host, controller });
+  for (const effect of effects) effect();
+
+  assert.equal(loads, 1);
+});
+
+test("dashboard route does not duplicate an active load when mounted", () => {
+  const effects = [];
+  let loads = 0;
+  const controller = {
+    getState: () => ({
+      phase: "loading",
+      data: null,
+      error: null,
+      refreshing: false,
+      pendingAction: null,
+      copyState: null,
+      copiedEmail: null,
+    }),
+    subscribe: () => () => {},
+    load() {
+      loads += 1;
+    },
+  };
+  const host = {
+    React: {
+      useEffect(effect) {
+        effects.push(effect);
+      },
+      useState(initial) {
+        return [initial, () => {}];
+      },
+    },
+    ui: {
+      Alert: "alert",
+      AlertDescription: "alert-description",
+      AlertTitle: "alert-title",
+      Button: "button",
+      Card: "card",
+      CardContent: "card-content",
+    },
+    jsx(type, props, ...children) {
+      return { type, props: props ?? {}, children };
+    },
+  };
+  const { hooks } = loadBundle();
+
+  hooks.AugpoolPage({ host, controller });
+  for (const effect of effects) effect();
+
+  assert.equal(loads, 0);
+});
+
+test("settings health revalidates ready controller state when mounted", () => {
+  const effects = [];
+  let loads = 0;
+  const controller = {
+    getState: () => ({ phase: "ready", data: dashboard(), error: null }),
+    subscribe: () => () => {},
+    load() {
+      loads += 1;
+    },
+  };
+  const host = {
+    React: {
+      useEffect(effect) {
+        effects.push(effect);
+      },
+      useState(initial) {
+        return [initial, () => {}];
+      },
+    },
+    ui: {
+      Alert: "alert",
+      AlertDescription: "alert-description",
+      AlertTitle: "alert-title",
+      Badge: "badge",
+      Button: "button",
+    },
+    jsx(type, props, ...children) {
+      return { type, props: props ?? {}, children };
+    },
+  };
+  const { hooks } = loadBundle();
+
+  hooks.PluginSettingsHealth({ host, controller });
+  for (const effect of effects) effect();
+
+  assert.equal(loads, 1);
 });
 
 test("controller loads and force-refreshes while preserving current data", async () => {
