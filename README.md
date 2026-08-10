@@ -24,7 +24,7 @@ export full credentials. Do not expose this plugin on an untrusted network.
 ## Requirements
 
 - Kandev with native plugins enabled.
-- Augpool `0.2.0` or newer, providing `stats --json` schema version 1 and the
+- Augpool `0.3.0` or newer, providing `stats --json` schema version 1 and the
   JSON mutation commands.
 - A stable, global Augpool installation visible to the Kandev process. A
   project virtualenv that Kandev does not activate is insufficient.
@@ -32,7 +32,7 @@ export full credentials. Do not expose this plugin on an untrusted network.
 Recommended Augpool install:
 
 ```sh
-pipx install git+https://github.com/zeval/augpool.git
+pipx install augpool
 augpool --version
 augpool stats --json
 ```

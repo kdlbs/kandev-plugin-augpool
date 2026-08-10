@@ -24,7 +24,7 @@ type fakeService struct {
 
 func newFakeService() *fakeService {
 	return &fakeService{
-		status: CLIStatus{Executable: "/usr/bin/augpool", Version: "augpool 0.2.0"},
+		status: CLIStatus{Executable: "/usr/bin/augpool", Version: "augpool 0.3.0"},
 		snapshot: &StatsSnapshot{
 			SchemaVersion: 1,
 			GeneratedAt:   "2026-08-06T18:00:00Z",
@@ -151,7 +151,7 @@ func TestStatsWebhookReturnsCLIAndSnapshotWithoutCaching(t *testing.T) {
 
 	var payload dashboardResponse
 	require.NoError(t, json.Unmarshal(response.Body, &payload))
-	require.Equal(t, "augpool 0.2.0", payload.CLI.Version)
+	require.Equal(t, "augpool 0.3.0", payload.CLI.Version)
 	require.Equal(t, 1, payload.Snapshot.SchemaVersion)
 	require.False(t, payload.ManagementEnabled)
 }
@@ -290,5 +290,14 @@ func TestMissingCLIErrorExplainsAbsolutePathSetting(t *testing.T) {
 	require.Equal(t, int32(502), response.Status)
 	require.JSONEq(t, `{
 		"error": "Augpool CLI not found. In plugin settings, set Augpool executable to the absolute path reported by command -v augpool (where augpool on Windows)."
+	}`, string(response.Body))
+}
+
+func TestUnsupportedVersionErrorExplainsRequiredVersion(t *testing.T) {
+	response := backendError(ErrUnsupportedVersion)
+
+	require.Equal(t, int32(502), response.Status)
+	require.JSONEq(t, `{
+		"error": "Augpool 0.3.0 or newer is required; upgrade the configured CLI"
 	}`, string(response.Body))
 }

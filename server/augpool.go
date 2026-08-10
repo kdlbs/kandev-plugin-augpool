@@ -28,15 +28,17 @@ const (
 )
 
 var (
-	ErrCLIUnavailable    = errors.New("augpool CLI unavailable")
-	ErrUnsupportedSchema = errors.New("unsupported Augpool stats schema")
-	ErrInvalidOutput     = errors.New("invalid Augpool output")
-	ErrOutputTooLarge    = errors.New("Augpool output exceeded limit")
-	ErrTimedOut          = errors.New("Augpool command timed out")
-	ErrAccountNotFound   = errors.New("Augpool account not found")
+	ErrCLIUnavailable     = errors.New("augpool CLI unavailable")
+	ErrUnsupportedVersion = errors.New("unsupported Augpool version")
+	ErrUnsupportedSchema  = errors.New("unsupported Augpool stats schema")
+	ErrInvalidOutput      = errors.New("invalid Augpool output")
+	ErrOutputTooLarge     = errors.New("Augpool output exceeded limit")
+	ErrTimedOut           = errors.New("Augpool command timed out")
+	ErrAccountNotFound    = errors.New("Augpool account not found")
 )
 
 var base64URLToken = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var augpoolVersion = regexp.MustCompile(`^augpool ([0-9]+)\.([0-9]+)\.([0-9]+)(?:[.+-][0-9A-Za-z.-]+)?$`)
 
 type CLICommand struct {
 	Executable  string
@@ -210,8 +212,14 @@ func (c *AugpoolCLI) Status(ctx context.Context) (CLIStatus, error) {
 		return CLIStatus{}, err
 	}
 	version := strings.TrimSpace(string(output.Stdout))
-	if !strings.HasPrefix(version, "augpool ") || strings.Contains(version, "\n") {
+	matches := augpoolVersion.FindStringSubmatch(version)
+	if matches == nil || strings.Contains(version, "\n") {
 		return CLIStatus{}, fmt.Errorf("%w: unexpected version response", ErrInvalidOutput)
+	}
+	major, _ := strconv.Atoi(matches[1])
+	minor, _ := strconv.Atoi(matches[2])
+	if major == 0 && minor < 3 {
+		return CLIStatus{}, fmt.Errorf("%w: got %s; need 0.3.0 or newer", ErrUnsupportedVersion, version)
 	}
 	executable, err := c.resolveExecutable()
 	if err != nil {
