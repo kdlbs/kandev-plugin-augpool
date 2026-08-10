@@ -36,3 +36,10 @@ test("settings health card fills the host settings column", async () => {
     /\.kandev-augpool__settings-health\s*{[^}]*max-width:\s*none;[^}]*margin-inline:\s*0;/,
   );
 });
+
+test("dialog hit-area styles leave switches and checkboxes at native size", async () => {
+  const css = await readFile(new URL("../ui/plugin.css", import.meta.url), "utf8");
+
+  assert.doesNotMatch(css, /\.kandev-augpool__dialog-form button/);
+  assert.match(css, /\.kandev-augpool__dialog-action/);
+});

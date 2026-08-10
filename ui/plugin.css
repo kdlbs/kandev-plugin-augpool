@@ -49,7 +49,7 @@
 
 .kandev-augpool__primary-actions button,
 .kandev-augpool__actions button,
-.kandev-augpool__dialog-form button,
+.kandev-augpool__dialog-action,
 .kandev-augpool__settings-health button {
   min-width: 40px;
   min-height: 40px;
@@ -59,7 +59,7 @@
 
 .kandev-augpool__primary-actions button:active:not(:disabled),
 .kandev-augpool__actions button:active:not(:disabled),
-.kandev-augpool__dialog-form button:active:not(:disabled),
+.kandev-augpool__dialog-action:active:not(:disabled),
 .kandev-augpool__settings-health button:active:not(:disabled) {
   transform: scale(0.96);
 }

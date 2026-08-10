@@ -24,7 +24,10 @@ function loadBundle() {
     `${source}\n;globalThis.__augpoolTest = {
       AccountsTable,
       AugpoolPage,
+      EditAccountDialog,
+      ImportAccountDialog,
       PluginSettingsHealth,
+      RemoveAccountDialog,
       createDashboardController,
       copyCredentialBlob,
       deriveSummary,
@@ -41,6 +44,37 @@ function findElements(node, type, found = []) {
   if (node.type === type) found.push(node);
   for (const child of node.children ?? []) findElements(child, type, found);
   return found;
+}
+
+function staticComponentHost() {
+  return {
+    React: {
+      useEffect() {},
+      useState(initial) {
+        return [initial, () => {}];
+      },
+    },
+    ui: {
+      Alert: "alert",
+      AlertDescription: "alert-description",
+      AlertTitle: "alert-title",
+      Badge: "badge",
+      Button: "button",
+      Checkbox: "checkbox",
+      Dialog: "dialog",
+      DialogContent: "dialog-content",
+      DialogDescription: "dialog-description",
+      DialogFooter: "dialog-footer",
+      DialogHeader: "dialog-header",
+      DialogTitle: "dialog-title",
+      Input: "input",
+      Label: "label",
+      Switch: "switch",
+    },
+    jsx(type, props, ...children) {
+      return { type, props: props ?? {}, children };
+    },
+  };
 }
 
 function response(payload, status = 200) {
@@ -323,6 +357,90 @@ test("settings health revalidates ready controller state when mounted", () => {
   for (const effect of effects) effect();
 
   assert.equal(loads, 1);
+});
+
+test("settings health does not inherit the dashboard page shell", () => {
+  const controller = {
+    getState: () => ({ phase: "ready", data: dashboard(), error: null }),
+    subscribe: () => () => {},
+    load() {},
+  };
+  const host = staticComponentHost();
+  const { hooks } = loadBundle();
+
+  const tree = hooks.PluginSettingsHealth({ host, controller });
+
+  assert.equal(tree.props.className, "kandev-augpool__settings-health");
+});
+
+test("dialog footer buttons opt into action hit-area styling", () => {
+  const host = staticComponentHost();
+  const controller = { mutate: async () => true };
+  const account = dashboard().snapshot.accounts[0];
+  const { hooks } = loadBundle();
+  const trees = [
+    hooks.ImportAccountDialog({ host, controller, open: true, onOpenChange() {} }),
+    hooks.EditAccountDialog({ host, controller, account, onClose() {} }),
+    hooks.RemoveAccountDialog({ host, controller, account, onClose() {} }),
+  ];
+
+  const buttons = trees.flatMap((tree) => findElements(tree, "button"));
+
+  assert.equal(buttons.length, 6);
+  for (const button of buttons) {
+    assert.match(button.props.className ?? "", /kandev-augpool__dialog-action/);
+  }
+});
+
+test("native dialog controls override stale broad button sizing", () => {
+  const host = staticComponentHost();
+  const controller = { mutate: async () => true };
+  const account = dashboard().snapshot.accounts[0];
+  const { hooks } = loadBundle();
+  const importTree = hooks.ImportAccountDialog({
+    host,
+    controller,
+    open: true,
+    onOpenChange() {},
+  });
+  const editTree = hooks.EditAccountDialog({ host, controller, account, onClose() {} });
+  const controls = [
+    findElements(importTree, "checkbox")[0],
+    findElements(editTree, "switch")[0],
+  ];
+
+  for (const control of controls) {
+    assert.equal(control.props.style?.minWidth, 0);
+    assert.equal(control.props.style?.minHeight, 0);
+  }
+});
+
+test("edit dialog explains relative account capacity in plain language", () => {
+  const host = staticComponentHost();
+  const { hooks } = loadBundle();
+  const tree = hooks.EditAccountDialog({
+    host,
+    controller: { mutate: async () => true },
+    account: dashboard().snapshot.accounts[0],
+    onClose() {},
+  });
+
+  const capacityLabel = findElements(tree, "label").find(
+    (label) => label.props.htmlFor === "augpool-weight",
+  );
+  const capacityInput = findElements(tree, "input").find(
+    (input) => input.props.id === "augpool-weight",
+  );
+  const capacityHint = findElements(tree, "p").find(
+    (paragraph) => paragraph.props.id === "augpool-weight-hint",
+  );
+
+  assert.equal(capacityLabel.children[0], "Relative capacity");
+  assert.equal(capacityInput.props["aria-describedby"], "augpool-weight-hint");
+  assert.equal(
+    capacityHint.children[0],
+    "A value of 2 lets this account carry roughly twice the usage of an account set to 1.",
+  );
 });
 
 test("controller loads and force-refreshes while preserving current data", async () => {
