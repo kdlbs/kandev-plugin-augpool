@@ -1,6 +1,6 @@
 id: "kandev-augpool"
 api_version: 1
-version: "0.1.1"
+version: "0.1.2"
 display_name: "Augpool"
 description: "View Augpool account usage, routing health, and trusted-host account controls from Kandev."
 author: "kdlbs"

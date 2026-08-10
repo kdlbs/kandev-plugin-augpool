@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2] - 2026-08-10
+
+### Changed
+
+- fix: require Augpool 0.3 machine API (6db61fb)
+
+
 ## [0.1.1] - 2026-08-07
 
 ### Fixed

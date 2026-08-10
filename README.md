@@ -108,13 +108,13 @@ make package-host
 
 `make test` runs Go backend tests, dependency-free Node bundle tests, CSS
 contract tests, and JavaScript syntax validation. `make package-host` writes
-`kandev-augpool-0.1.1.tar.gz` for the current OS/architecture.
+`kandev-augpool-0.1.2.tar.gz` for the current OS/architecture.
 
 Install the package through **Settings → Plugins → Install plugin**, enable it,
 then configure its executable/home. A direct local install is also possible:
 
 ```sh
-curl -F package=@kandev-augpool-0.1.1.tar.gz \
+curl -F package=@kandev-augpool-0.1.2.tar.gz \
   http://localhost:<kandev-port>/api/plugins/install
 ```
 
