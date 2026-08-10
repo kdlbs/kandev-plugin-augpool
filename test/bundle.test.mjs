@@ -22,6 +22,7 @@ function loadBundle() {
   });
   vm.runInContext(
     `${source}\n;globalThis.__augpoolTest = {
+      AccountsTable,
       createDashboardController,
       copyCredentialBlob,
       deriveSummary,
@@ -31,6 +32,13 @@ function loadBundle() {
     { filename: "bundle.js" },
   );
   return { registration, hooks: context.__augpoolTest };
+}
+
+function findElements(node, type, found = []) {
+  if (!node || typeof node !== "object") return found;
+  if (node.type === type) found.push(node);
+  for (const child of node.children ?? []) findElements(child, type, found);
+  return found;
 }
 
 function response(payload, status = 200) {
@@ -134,6 +142,52 @@ test("registers the Augpool nav, native route, and settings health slot", () => 
   assert.equal(calls[0][1].icon, "chart");
   assert.equal(calls[0][1].section, "integrations");
   assert.equal(calls[1][1].options.topbar.subtitle, "Account usage and routing health");
+});
+
+test("desktop table headings align with numeric values and actions", () => {
+  const { hooks } = loadBundle();
+  const ui = {
+    Badge: "badge",
+    Card: "card",
+    CardContent: "card-content",
+    Table: "table",
+    TableBody: "tbody",
+    TableCell: "td",
+    TableHead: "th",
+    TableHeader: "thead",
+    TableRow: "tr",
+  };
+  const host = {
+    ui,
+    jsx(type, props, ...children) {
+      return { type, props: props ?? {}, children };
+    },
+  };
+
+  const tree = hooks.AccountsTable({
+    host,
+    controller: {},
+    state: {},
+    accounts: dashboard().snapshot.accounts,
+    onEdit() {},
+    onRemove() {},
+  });
+  const headings = findElements(tree, "th");
+
+  assert.deepEqual(headings.map((heading) => heading.children[0]), [
+    "Account",
+    "Credits",
+    "Weight",
+    "Score",
+    "Local uses",
+    "Last selected",
+    "Actions",
+  ]);
+  for (const index of [1, 2, 3, 4, 6]) {
+    assert.match(headings[index].props.className ?? "", /kandev-augpool__align-end/);
+  }
+  assert.equal(headings[0].props.className, undefined);
+  assert.equal(headings[5].props.className, undefined);
 });
 
 test("controller loads and force-refreshes while preserving current data", async () => {

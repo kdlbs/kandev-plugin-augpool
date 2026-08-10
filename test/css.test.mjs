@@ -18,3 +18,12 @@ test("Augpool styles stay scoped, responsive, and motion-safe", async () => {
   assert.doesNotMatch(css, /transition:\s*all/i);
   assert.match(css, /transform:\s*scale\(0\.96\)/);
 });
+
+test("desktop table cells use a comfortable shared horizontal inset", async () => {
+  const css = await readFile(new URL("../ui/plugin.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.kandev-augpool__table-wrap th,\s*\.kandev-augpool__table-wrap td\s*{[^}]*padding-inline:\s*16px/,
+  );
+});

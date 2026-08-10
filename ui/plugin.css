@@ -121,6 +121,11 @@
   background: var(--card);
 }
 
+.kandev-augpool__table-wrap th,
+.kandev-augpool__table-wrap td {
+  padding-inline: 16px;
+}
+
 .kandev-augpool__table-wrap th {
   height: 44px;
   color: var(--muted-foreground);
@@ -174,7 +179,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-.kandev-augpool__number {
+.kandev-augpool__number,
+.kandev-augpool__align-end {
   text-align: right;
 }
 
