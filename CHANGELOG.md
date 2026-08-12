@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.6] - 2026-08-12
+
+### Added
+
+- Add 30-day local session and current-month credit balance graphs.
+- Split daily session bars by account with a color-coded totals legend.
+- Show configured weight-share targets while Augpool uses auto routing.
+
+### Changed
+
+- Support Augpool 0.3 stats schema version 2 and routing modes.
+- Correct credit-period copy from 30-day to current UTC month.
+- Keep account notes from `usage --json` out of browser responses.
+
 ## [0.1.5] - 2026-08-10
 
 ### Changed

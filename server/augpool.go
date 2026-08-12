@@ -247,13 +247,39 @@ func (c *AugpoolCLI) Stats(ctx context.Context, refresh bool) (*StatsSnapshot, e
 	if err := ensureEOF(decoder); err != nil {
 		return nil, fmt.Errorf("%w: stats JSON", ErrInvalidOutput)
 	}
-	if snapshot.SchemaVersion != 1 {
-		return nil, fmt.Errorf("%w: got %d, need 1; upgrade the plugin or Augpool", ErrUnsupportedSchema, snapshot.SchemaVersion)
+	if snapshot.SchemaVersion != 2 {
+		return nil, fmt.Errorf("%w: got %d, need 2; upgrade the plugin or Augpool", ErrUnsupportedSchema, snapshot.SchemaVersion)
 	}
 	if err := validateSnapshot(&snapshot); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidOutput, err)
 	}
 	return &snapshot, nil
+}
+
+func (c *AugpoolCLI) Usage(ctx context.Context) (*UsageReport, error) {
+	output, err := c.run(
+		ctx,
+		"usage",
+		c.args("usage", "--json"),
+		nil,
+		c.refreshTimeout,
+		statsOutputLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	var report UsageReport
+	decoder := json.NewDecoder(bytes.NewReader(output.Stdout))
+	if err := decoder.Decode(&report); err != nil {
+		return nil, fmt.Errorf("%w: usage JSON", ErrInvalidOutput)
+	}
+	if err := ensureEOF(decoder); err != nil {
+		return nil, fmt.Errorf("%w: usage JSON", ErrInvalidOutput)
+	}
+	if err := validateUsageReport(&report); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidOutput, err)
+	}
+	return &report, nil
 }
 
 func ensureEOF(decoder *json.Decoder) error {
@@ -271,6 +297,18 @@ func validateSnapshot(snapshot *StatsSnapshot) error {
 	if snapshot.GeneratedAt == "" || snapshot.Strategy == "" || snapshot.Accounts == nil {
 		return errors.New("missing required stats fields")
 	}
+	switch snapshot.Mode {
+	case "auto":
+		if snapshot.LockedEmail != nil {
+			return errors.New("auto mode has locked account")
+		}
+	case "locked":
+		if snapshot.LockedEmail == nil {
+			return errors.New("locked mode missing account")
+		}
+	default:
+		return errors.New("invalid routing mode")
+	}
 	if snapshot.Usage.TTLSeconds < 0 || snapshot.Usage.FetchesOK < 0 || snapshot.Usage.TenantsQueried < 0 {
 		return errors.New("invalid usage metadata")
 	}
@@ -285,8 +323,28 @@ func validateSnapshot(snapshot *StatsSnapshot) error {
 	return nil
 }
 
-func (c *AugpoolCLI) Use(ctx context.Context, email string) error {
-	return c.mutate(ctx, "use", c.args("use", email, "--json"), nil)
+func validateUsageReport(report *UsageReport) error {
+	if report.SessionHistory.Timezone == "" || report.SessionHistory.ByDay == nil || report.Accounts == nil {
+		return errors.New("missing required usage fields")
+	}
+	if report.SessionHistory.TrackedSessions < 0 {
+		return errors.New("invalid usage totals")
+	}
+	for _, day := range report.SessionHistory.ByDay {
+		if day.Date == "" || day.Sessions < 0 || day.Accounts == nil {
+			return errors.New("invalid session history")
+		}
+		for _, sessions := range day.Accounts {
+			if sessions < 0 {
+				return errors.New("invalid account session history")
+			}
+		}
+	}
+	return nil
+}
+
+func (c *AugpoolCLI) SetMode(ctx context.Context, target string) error {
+	return c.mutate(ctx, "mode", c.args("mode", target, "--json"), nil)
 }
 
 func (c *AugpoolCLI) Update(

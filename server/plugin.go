@@ -19,7 +19,8 @@ const maxActionBody = 64 << 10
 type augpoolService interface {
 	Status(context.Context) (CLIStatus, error)
 	Stats(context.Context, bool) (*StatsSnapshot, error)
-	Use(context.Context, string) error
+	Usage(context.Context) (*UsageReport, error)
+	SetMode(context.Context, string) error
 	Update(context.Context, string, *bool, *float64) error
 	Import(context.Context, string, bool) error
 	Remove(context.Context, string) error
@@ -46,6 +47,7 @@ type dashboardResponse struct {
 	CLI               CLIStatus      `json:"cli"`
 	ManagementEnabled bool           `json:"management_enabled"`
 	Snapshot          *StatsSnapshot `json:"snapshot"`
+	Usage             *UsageReport   `json:"usage"`
 }
 
 type actionRequest struct {
@@ -156,8 +158,10 @@ func (p *augpoolPlugin) handleAction(
 
 func executeAction(ctx context.Context, service augpoolService, action actionRequest) error {
 	switch action.Action {
-	case "select":
-		return service.Use(ctx, action.Email)
+	case "lock":
+		return service.SetMode(ctx, action.Email)
+	case "auto":
+		return service.SetMode(ctx, "auto")
 	case "enable":
 		enabled := true
 		return service.Update(ctx, action.Email, &enabled, nil)
@@ -211,11 +215,15 @@ func validateAction(action actionRequest) error {
 	}
 
 	switch action.Action {
-	case "select", "enable", "disable", "remove", "export":
+	case "lock", "enable", "disable", "remove", "export":
 		if err := requireEmail(); err != nil {
 			return err
 		}
 		if action.Weight != nil || noImportFields() != nil {
+			return errors.New("Action contains fields it does not use")
+		}
+	case "auto":
+		if action.Email != "" || action.Weight != nil || noImportFields() != nil {
 			return errors.New("Action contains fields it does not use")
 		}
 	case "weight":
@@ -255,10 +263,15 @@ func (p *augpoolPlugin) dashboard(
 	if err != nil {
 		return backendError(err)
 	}
+	usage, err := service.Usage(ctx)
+	if err != nil {
+		return backendError(err)
+	}
 	return jsonResponse(200, dashboardResponse{
 		CLI:               status,
 		ManagementEnabled: config.ManagementEnabled,
 		Snapshot:          snapshot,
+		Usage:             usage,
 	})
 }
 

@@ -43,3 +43,43 @@ test("dialog hit-area styles leave switches and checkboxes at native size", asyn
   assert.doesNotMatch(css, /\.kandev-augpool__dialog-form button/);
   assert.match(css, /\.kandev-augpool__dialog-action/);
 });
+
+test("usage graphs use a quiet responsive two-to-one layout", async () => {
+  const css = await readFile(new URL("../ui/plugin.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.kandev-augpool__graphs\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0,\s*2fr\)\s+minmax\(280px,\s*1fr\);/,
+  );
+  assert.match(
+    css,
+    /@media\s*\(max-width:\s*1080px\)[\s\S]*?\.kandev-augpool__graphs\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+  );
+  assert.match(
+    css,
+    /\.kandev-augpool__graph-card\s*{[^}]*box-shadow:\s*0\s+1px\s+2px[^;]*,[^;]*0\s+8px\s+24px/,
+  );
+});
+
+test("chart marks use host theme colors and tabular values", async () => {
+  const css = await readFile(new URL("../ui/plugin.css", import.meta.url), "utf8");
+
+  assert.match(
+    css,
+    /\.kandev-augpool__session-segment\s*{[^}]*background:\s*var\(--session-color,\s*var\(--primary\)\)/,
+  );
+  assert.match(
+    css,
+    /\.kandev-augpool__session-legend strong\s*{[^}]*font-variant-numeric:\s*tabular-nums/,
+  );
+  assert.match(
+    css,
+    /\.kandev-augpool__day-label--end\s*{[^}]*text-align:\s*right/,
+  );
+  assert.match(css, /\.kandev-augpool__credit-fill\s*{[^}]*background:\s*var\(--primary\)/);
+  assert.match(css, /\.kandev-augpool__credit-target\s*{[^}]*background:\s*var\(--foreground\)/);
+  assert.match(
+    css,
+    /\.kandev-augpool__credit-label strong,[\s\S]*?\.kandev-augpool__graph-heading > span\s*{[^}]*font-variant-numeric:\s*tabular-nums/,
+  );
+});

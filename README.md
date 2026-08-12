@@ -2,10 +2,11 @@
 
 A native [Kandev](https://github.com/kdlbs/kandev) dashboard for
 [Augpool](https://github.com/zeval/augpool) account usage and routing health.
-It shows every account, the active/disabled/cooldown state, 30-day credits,
-weighted score, local selections, and Analytics cache health.
+It shows every account, the locked/disabled/cooldown state, current-month
+credits, weighted score, 30-day local session history, and Analytics cache
+health.
 
-When explicitly enabled, the dashboard can select, enable, disable, reweight,
+When explicitly enabled, the dashboard can lock or auto-route, enable, disable, reweight,
 import, remove, and export accounts. Every read and mutation goes through the
 installed `augpool` CLI. The plugin never reads Augpool state or credential
 files and never calls Augment Analytics directly.
@@ -24,8 +25,8 @@ export full credentials. Do not expose this plugin on an untrusted network.
 ## Requirements
 
 - Kandev with native plugins enabled.
-- Augpool `0.3.0` or newer, providing `stats --json` schema version 1 and the
-  JSON mutation commands.
+- Augpool `0.3.0` or newer, providing `stats --json` schema version 2,
+  `usage --json`, and the JSON mutation commands.
 - A stable, global Augpool installation visible to the Kandev process. A
   project virtualenv that Kandev does not activate is insufficient.
 
@@ -43,7 +44,7 @@ augpool stats --json
 | --- | --- | --- |
 | `augpool_executable` | empty | Exact executable path. Empty checks Kandev's `PATH`, `~/.local/bin`, `/opt/homebrew/bin`, and `/usr/local/bin`. Paths with spaces work; this is not shell syntax. |
 | `augpool_home` | empty | Optional root passed as `augpool --home PATH`. Empty keeps Augpool's normal `AUGPOOL_HOME` / `~/.augpool` behavior. |
-| `management_enabled` | `false` | Enables selection, edit, import, removal, and credential export on a trusted host. |
+| `management_enabled` | `false` | Enables routing-mode changes, edit, import, removal, and credential export on a trusted host. |
 
 The settings page includes a live health card showing the resolved executable,
 Augpool version, home, and read-only/management state.
@@ -53,9 +54,19 @@ Augpool version, home, and read-only/management state.
 - **Refresh usage** runs `augpool stats --json --refresh`. If Analytics fails,
   Augpool preserves the last usable cache and the dashboard displays its age
   plus the new refresh errors.
-- **Select** runs `augpool use EMAIL --json`. It rewrites the configured
-  Augment session for future launches; already-running ACP/CLI processes do
-  not switch credentials.
+- **Sessions over time** reads `augpool usage --json` and plots local account
+  selections for the latest 30 UTC days. Daily bars are stacked and color-coded
+  by account, with 30-day totals in the legend and exact per-day breakdowns in
+  accessible labels. Pools larger than five series show the four busiest
+  accounts separately and group the remainder as **Other**. Dated tracking
+  starts with Augpool 0.3; older lifetime counts are not assigned to invented
+  dates.
+- **Credit balance** compares current UTC-month Analytics credits by account.
+  Auto mode also shows each enabled account's configured weight share as a
+  target marker; locked mode hides those targets because routing is fixed.
+- **Lock** runs `augpool mode EMAIL --json`; **Use auto** runs
+  `augpool mode auto --json`. Changes affect future launches only;
+  already-running ACP/CLI processes do not switch credentials.
 - **Edit** enables/disables an account and sets a positive routing weight
   through `augpool update`.
 - **Import** sends the share blob to `augpool import - --json` on stdin. The
@@ -67,6 +78,9 @@ Augpool version, home, and read-only/management state.
   without the Clipboard API, a temporary hidden textarea fallback is removed
   immediately; if both methods fail, use `augpool export EMAIL` in a trusted
   terminal.
+
+The plugin decodes only fields needed by the dashboard. Extra fields from
+`usage --json`, including account notes, are not relayed to the browser.
 
 An Augpool share blob is a full credential. Use disposable accounts for tests,
 never paste a production blob into logs or issue trackers, and rotate anything
@@ -108,13 +122,13 @@ make package-host
 
 `make test` runs Go backend tests, dependency-free Node bundle tests, CSS
 contract tests, and JavaScript syntax validation. `make package-host` writes
-`kandev-augpool-0.1.5.tar.gz` for the current OS/architecture.
+`kandev-augpool-0.1.6.tar.gz` for the current OS/architecture.
 
 Install the package through **Settings → Plugins → Install plugin**, enable it,
 then configure its executable/home. A direct local install is also possible:
 
 ```sh
-curl -F package=@kandev-augpool-0.1.5.tar.gz \
+curl -F package=@kandev-augpool-0.1.6.tar.gz \
   http://localhost:<kandev-port>/api/plugins/install
 ```
 
@@ -122,7 +136,7 @@ curl -F package=@kandev-augpool-0.1.5.tar.gz \
 
 1. Verify missing-CLI, empty-pool, default-PATH, configured-path, and configured-home states.
 2. Import two disposable share blobs and compare dashboard order with `augpool stats --json`.
-3. Disable/re-enable, change weight, select active, and force an Analytics refresh.
+3. Disable/re-enable, change weight, switch between locked and auto mode, and force an Analytics refresh.
 4. Export a disposable account and compare clipboard content with CLI output; inspect the DOM/logs to confirm the token is absent.
 5. Try incorrect/correct removal confirmation, then check phone, tablet, and desktop layouts.
 6. Disable/re-enable the plugin and confirm its nav, route, and settings slot unregister/re-register cleanly.

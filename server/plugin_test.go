@@ -17,6 +17,7 @@ type fakeService struct {
 	calls      []string
 	status     CLIStatus
 	snapshot   *StatsSnapshot
+	usage      *UsageReport
 	exportBlob string
 	err        error
 	importBlob string
@@ -26,10 +27,18 @@ func newFakeService() *fakeService {
 	return &fakeService{
 		status: CLIStatus{Executable: "/usr/bin/augpool", Version: "augpool 0.3.0"},
 		snapshot: &StatsSnapshot{
-			SchemaVersion: 1,
+			SchemaVersion: 2,
 			GeneratedAt:   "2026-08-06T18:00:00Z",
+			Mode:          "auto",
 			Strategy:      "least_used",
 			Accounts:      []AccountRecord{},
+		},
+		usage: &UsageReport{
+			SessionHistory: SessionHistory{
+				Timezone: "UTC",
+				ByDay:    []SessionDay{},
+			},
+			Accounts: []UsageAccountRecord{},
 		},
 		exportBlob: "ZXhwb3J0ZWQtY3JlZGVudGlhbA",
 	}
@@ -56,8 +65,15 @@ func (s *fakeService) Stats(_ context.Context, refresh bool) (*StatsSnapshot, er
 	return s.snapshot, nil
 }
 
-func (s *fakeService) Use(_ context.Context, email string) error {
-	return s.record("select:" + email)
+func (s *fakeService) Usage(context.Context) (*UsageReport, error) {
+	if err := s.record("usage"); err != nil {
+		return nil, err
+	}
+	return s.usage, nil
+}
+
+func (s *fakeService) SetMode(_ context.Context, target string) error {
+	return s.record("mode:" + target)
 }
 
 func (s *fakeService) Update(_ context.Context, email string, enabled *bool, weight *float64) error {
@@ -147,12 +163,13 @@ func TestStatsWebhookReturnsCLIAndSnapshotWithoutCaching(t *testing.T) {
 	require.Equal(t, int32(200), response.Status)
 	require.Equal(t, "application/json", response.Headers["Content-Type"])
 	require.Equal(t, "no-store", response.Headers["Cache-Control"])
-	require.Equal(t, []string{"status", "stats:true"}, service.calls)
+	require.Equal(t, []string{"status", "stats:true", "usage"}, service.calls)
 
 	var payload dashboardResponse
 	require.NoError(t, json.Unmarshal(response.Body, &payload))
 	require.Equal(t, "augpool 0.3.0", payload.CLI.Version)
-	require.Equal(t, 1, payload.Snapshot.SchemaVersion)
+	require.Equal(t, 2, payload.Snapshot.SchemaVersion)
+	require.Equal(t, "UTC", payload.Usage.SessionHistory.Timezone)
 	require.False(t, payload.ManagementEnabled)
 }
 
@@ -184,7 +201,7 @@ func TestActionWebhookManagementDisabledByDefault(t *testing.T) {
 	p := testPlugin(service, false)
 
 	response, err := p.HandleWebhook(context.Background(), webhook(
-		"action", "POST", "", "application/json", `{"action":"select","email":"alice@example.com"}`,
+		"action", "POST", "", "application/json", `{"action":"lock","email":"alice@example.com"}`,
 	))
 	require.NoError(t, err)
 	require.Equal(t, int32(403), response.Status)
@@ -197,7 +214,8 @@ func TestActionWebhookMapsEveryAccountOperation(t *testing.T) {
 		body       string
 		expectCall string
 	}{
-		{"select", `{"action":"select","email":"alice@example.com"}`, "select:alice@example.com"},
+		{"lock", `{"action":"lock","email":"alice@example.com"}`, "mode:alice@example.com"},
+		{"auto", `{"action":"auto"}`, "mode:auto"},
 		{"enable", `{"action":"enable","email":"alice@example.com"}`, "update:alice@example.com:true:nil"},
 		{"disable", `{"action":"disable","email":"alice@example.com"}`, "update:alice@example.com:false:nil"},
 		{"weight", `{"action":"weight","email":"alice@example.com","weight":2.5}`, "update:alice@example.com:nil:2.5"},
@@ -215,7 +233,7 @@ func TestActionWebhookMapsEveryAccountOperation(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int32(200), response.Status)
 			require.Equal(t, test.expectCall, service.calls[0])
-			require.Equal(t, []string{"status", "stats:false"}, service.calls[1:])
+			require.Equal(t, []string{"status", "stats:false", "usage"}, service.calls[1:])
 			if test.name == "import" {
 				require.Equal(t, "YWJjZA", service.importBlob)
 			}
@@ -247,9 +265,10 @@ func TestWebhookRejectsInvalidMethodQueryContentAndBody(t *testing.T) {
 		{"stats query", webhook("stats", "GET", "refresh=0", "", ""), 400},
 		{"action method", webhook("action", "GET", "", "", ""), 405},
 		{"content type", webhook("action", "POST", "", "text/plain", `{}`), 400},
-		{"unknown field", webhook("action", "POST", "", "application/json", `{"action":"select","email":"alice@example.com","secret":"x"}`), 400},
+		{"unknown field", webhook("action", "POST", "", "application/json", `{"action":"lock","email":"alice@example.com","secret":"x"}`), 400},
 		{"unknown action", webhook("action", "POST", "", "application/json", `{"action":"shell","email":"alice@example.com"}`), 400},
-		{"short email", webhook("action", "POST", "", "application/json", `{"action":"select","email":"alice"}`), 400},
+		{"short email", webhook("action", "POST", "", "application/json", `{"action":"lock","email":"alice"}`), 400},
+		{"auto with email", webhook("action", "POST", "", "application/json", `{"action":"auto","email":"alice@example.com"}`), 400},
 		{"bad weight", webhook("action", "POST", "", "application/json", `{"action":"weight","email":"alice@example.com","weight":0}`), 400},
 		{"unknown key", webhook("other", "GET", "", "", ""), 404},
 	}
@@ -276,7 +295,7 @@ func TestWebhookMapsKnownBackendErrors(t *testing.T) {
 		service := newFakeService()
 		service.err = test.err
 		response, err := testPlugin(service, true).HandleWebhook(context.Background(), webhook(
-			"action", "POST", "", "application/json", `{"action":"select","email":"alice@example.com"}`,
+			"action", "POST", "", "application/json", `{"action":"lock","email":"alice@example.com"}`,
 		))
 		require.NoError(t, err)
 		require.Equal(t, test.want, response.Status)
