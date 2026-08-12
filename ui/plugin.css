@@ -114,6 +114,238 @@
   white-space: nowrap;
 }
 
+.kandev-augpool__graphs {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 12px;
+  margin-block: 18px 20px;
+}
+
+.kandev-augpool__graph-card {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 7%, transparent),
+    0 8px 24px color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.kandev-augpool__graph-content {
+  display: flex;
+  min-width: 0;
+  min-height: 276px;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+}
+
+.kandev-augpool__graph-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.kandev-augpool__graph-heading h3,
+.kandev-augpool__graph-heading p {
+  margin: 0;
+}
+
+.kandev-augpool__graph-heading h3 {
+  font-size: 0.9375rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.kandev-augpool__graph-heading p,
+.kandev-augpool__graph-heading > span,
+.kandev-augpool__graph-footnote,
+.kandev-augpool__day-label,
+.kandev-augpool__graph-empty {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.kandev-augpool__credit-label strong,
+.kandev-augpool__graph-heading > span {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kandev-augpool__session-legend {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+  list-style: none;
+}
+
+.kandev-augpool__session-legend li {
+  display: grid;
+  min-width: 0;
+  max-width: 180px;
+  align-items: center;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.kandev-augpool__session-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--session-color, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.kandev-augpool__session-series-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kandev-augpool__session-legend strong {
+  color: var(--foreground);
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.kandev-augpool__session-bars {
+  display: flex;
+  height: 148px;
+  align-items: stretch;
+  gap: clamp(2px, 0.35vw, 6px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kandev-augpool__session-bars li {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kandev-augpool__session-track {
+  display: flex;
+  min-width: 2px;
+  flex: 1 1 auto;
+  align-items: flex-end;
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--muted) 48%, transparent);
+}
+
+.kandev-augpool__session-bar {
+  display: flex;
+  overflow: hidden;
+  width: 100%;
+  flex-direction: column-reverse;
+  border-radius: 4px 4px 2px 2px;
+  opacity: 0.82;
+  transition: opacity 150ms ease;
+}
+
+.kandev-augpool__session-segment {
+  min-height: 1px;
+  background: var(--session-color, var(--primary));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background) 38%, transparent);
+}
+
+.kandev-augpool__session-bars li:hover .kandev-augpool__session-bar {
+  opacity: 1;
+}
+
+.kandev-augpool__day-label {
+  min-height: 14px;
+  overflow: visible;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.kandev-augpool__day-label--end {
+  text-align: right;
+}
+
+.kandev-augpool__credit-bars {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kandev-augpool__credit-label {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block-end: 7px;
+  font-size: 0.8125rem;
+}
+
+.kandev-augpool__credit-label span {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kandev-augpool__credit-label strong {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.kandev-augpool__credit-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.kandev-augpool__credit-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  opacity: 0.78;
+}
+
+.kandev-augpool__credit-target {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  margin-inline-start: -1px;
+  border-radius: 999px;
+  background: var(--foreground);
+}
+
+.kandev-augpool__graph-footnote {
+  margin: auto 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.kandev-augpool__graph-empty {
+  display: flex;
+  min-height: 144px;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  text-align: center;
+}
+
 .kandev-augpool__table-wrap {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -316,6 +548,10 @@
   .kandev-augpool__table-wrap {
     overflow-x: auto;
   }
+
+  .kandev-augpool__graphs {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 720px) {
@@ -366,6 +602,11 @@
 
   .kandev-augpool__cache-note {
     text-align: left;
+  }
+
+  .kandev-augpool__graph-content {
+    min-height: 250px;
+    padding: 16px;
   }
 }
 

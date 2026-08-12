@@ -30,8 +30,12 @@ function loadBundle() {
       RemoveAccountDialog,
       createDashboardController,
       copyCredentialBlob,
+      deriveCreditBalance,
+      deriveSessionChart,
       deriveSummary,
       removeConfirmationMatches,
+      SummaryCards,
+      UsageOverview,
     };`,
     context,
     { filename: "bundle.js" },
@@ -43,6 +47,13 @@ function findElements(node, type, found = []) {
   if (!node || typeof node !== "object") return found;
   if (node.type === type) found.push(node);
   for (const child of node.children ?? []) findElements(child, type, found);
+  return found;
+}
+
+function findElementsByClass(node, className, found = []) {
+  if (!node || typeof node !== "object") return found;
+  if ((node.props?.className || "").split(/\s+/).includes(className)) found.push(node);
+  for (const child of node.children ?? []) findElementsByClass(child, className, found);
   return found;
 }
 
@@ -60,6 +71,8 @@ function staticComponentHost() {
       AlertTitle: "alert-title",
       Badge: "badge",
       Button: "button",
+      Card: "card",
+      CardContent: "card-content",
       Checkbox: "checkbox",
       Dialog: "dialog",
       DialogContent: "dialog-content",
@@ -87,22 +100,23 @@ function response(payload, status = 200) {
   };
 }
 
-function dashboard(active = "alice@example.com") {
+function dashboard(locked = "alice@example.com") {
   return {
     cli: { executable: "/usr/bin/augpool", version: "augpool 0.3.0", home: "" },
     management_enabled: true,
     snapshot: {
-      schema_version: 1,
+      schema_version: 2,
       generated_at: "2026-08-06T18:00:00Z",
       home: "/home/test/.augpool",
-      active_email: active,
+      mode: locked ? "locked" : "auto",
+      locked_email: locked,
       strategy: "least_used",
       usage: {
         fetched_at: 1_770_000_000,
         age_seconds: 10,
         ttl_seconds: 300,
         stale: false,
-        start_date: "2026-07-08",
+        start_date: "2026-08-01",
         end_date: "2026-08-06",
         refresh_attempted: false,
         refresh_succeeded: false,
@@ -116,7 +130,7 @@ function dashboard(active = "alice@example.com") {
           label: "Alice",
           enabled: true,
           weight: 1,
-          active: active === "alice@example.com",
+          locked: locked === "alice@example.com",
           credits_consumed: 40,
           score: 40,
           local_uses: 3,
@@ -128,9 +142,23 @@ function dashboard(active = "alice@example.com") {
         {
           email: "bob@example.com",
           label: "Bob",
-          enabled: false,
+          enabled: true,
           weight: 2,
-          active: active === "bob@example.com",
+          locked: locked === "bob@example.com",
+          credits_consumed: 60,
+          score: 30,
+          local_uses: 4,
+          source: "analytics",
+          last_selected_at: 1_770_000_120,
+          in_cooldown: false,
+          cooldown_until: null,
+        },
+        {
+          email: "charlie@example.com",
+          label: "Charlie",
+          enabled: false,
+          weight: 1,
+          locked: false,
           credits_consumed: null,
           score: null,
           local_uses: null,
@@ -140,6 +168,58 @@ function dashboard(active = "alice@example.com") {
           cooldown_until: null,
         },
       ],
+    },
+    usage: {
+      window: {
+        start_date: "2026-08-01",
+        end_date: "2026-08-06",
+        fetched_at: 1_770_000_000,
+        age_seconds: 10,
+      },
+      totals: {
+        accounts: 3,
+        enabled_accounts: 2,
+        credits_consumed: 100,
+        local_sessions: 7,
+      },
+      session_history: {
+        timezone: "UTC",
+        start_date: "2026-07-08",
+        end_date: "2026-08-06",
+        tracked_sessions: 7,
+        by_day: [
+          { date: "2026-08-02", sessions: 0, accounts: {} },
+          { date: "2026-08-03", sessions: 1, accounts: { "alice@example.com": 1 } },
+          {
+            date: "2026-08-04",
+            sessions: 4,
+            accounts: { "alice@example.com": 2, "bob@example.com": 2 },
+          },
+          { date: "2026-08-05", sessions: 2, accounts: { "bob@example.com": 2 } },
+          { date: "2026-08-06", sessions: 0, accounts: {} },
+        ],
+      },
+      accounts: [
+        {
+          email: "alice@example.com",
+          label: "Alice",
+          enabled: true,
+          locked: locked === "alice@example.com",
+          weight: 1,
+          credits_consumed: 40,
+          credit_share: 0.4,
+        },
+        {
+          email: "bob@example.com",
+          label: "Bob",
+          enabled: true,
+          locked: locked === "bob@example.com",
+          weight: 2,
+          credits_consumed: 60,
+          credit_share: 0.6,
+        },
+      ],
+      errors: [],
     },
   };
 }
@@ -224,6 +304,40 @@ test("desktop table headings align with numeric values and actions", () => {
   }
   assert.equal(headings[0].props.className, undefined);
   assert.equal(headings[5].props.className, undefined);
+});
+
+test("account table does not label local fallback counts as credits", () => {
+  const { hooks } = loadBundle();
+  const data = dashboard();
+  data.snapshot.accounts[0].credits_consumed = 9;
+  data.snapshot.accounts[0].source = "local";
+  const host = {
+    ui: {
+      Badge: "badge",
+      Card: "card",
+      CardContent: "card-content",
+      Table: "table",
+      TableBody: "tbody",
+      TableCell: "td",
+      TableHead: "th",
+      TableHeader: "thead",
+      TableRow: "tr",
+    },
+    jsx(type, props, ...children) {
+      return { type, props: props ?? {}, children };
+    },
+  };
+  const tree = hooks.AccountsTable({
+    host,
+    controller: {},
+    state: {},
+    accounts: data.snapshot.accounts,
+    onEdit() {},
+    onRemove() {},
+  });
+
+  const firstAccountRow = findElements(tree, "tr")[1];
+  assert.equal(firstAccountRow.children[1].children[0], "—");
 });
 
 test("dashboard route revalidates ready controller state when mounted", () => {
@@ -473,7 +587,7 @@ test("controller loads and force-refreshes while preserving current data", async
 
   assert.equal(requests[0].path, "/webhooks/stats");
   assert.equal(requests[1].path, "/webhooks/stats?refresh=1");
-  assert.equal(controller.getState().data.snapshot.active_email, "bob@example.com");
+  assert.equal(controller.getState().data.snapshot.locked_email, "bob@example.com");
   assert.equal(controller.getState().refreshing, false);
 });
 
@@ -518,7 +632,7 @@ test("newer request wins when an older load resolves late", async () => {
   pending[0](response(dashboard("alice@example.com")));
   await first;
 
-  assert.equal(controller.getState().data.snapshot.active_email, "bob@example.com");
+  assert.equal(controller.getState().data.snapshot.locked_email, "bob@example.com");
 });
 
 test("mutation posts exact JSON and adopts returned dashboard", async () => {
@@ -543,7 +657,7 @@ test("mutation posts exact JSON and adopts returned dashboard", async () => {
     email: "alice@example.com",
     weight: 2.5,
   });
-  assert.equal(controller.getState().data.snapshot.active_email, "bob@example.com");
+  assert.equal(controller.getState().data.snapshot.locked_email, "bob@example.com");
   assert.equal(controller.getState().pendingAction, null);
 });
 
@@ -564,11 +678,11 @@ test("mutation supersedes an in-flight refresh without leaving refresh state stu
   const controller = hooks.createDashboardController(host);
 
   const refreshing = controller.refresh();
-  await controller.mutate({ action: "select", email: "bob@example.com" });
+  await controller.mutate({ action: "lock", email: "bob@example.com" });
   assert.equal(controller.getState().refreshing, false);
   resolveRefresh(response(dashboard("alice@example.com")));
   await refreshing;
-  assert.equal(controller.getState().data.snapshot.active_email, "bob@example.com");
+  assert.equal(controller.getState().data.snapshot.locked_email, "bob@example.com");
 });
 
 test("export copies exactly once and never stores or returns the blob", async () => {
@@ -594,16 +708,232 @@ test("export copies exactly once and never stores or returns the blob", async ()
 
 test("summary and destructive confirmation derive exact values", () => {
   const { hooks } = loadBundle();
-  const summary = hooks.deriveSummary(dashboard().snapshot);
+  const data = dashboard();
+  const summary = hooks.deriveSummary(data.snapshot, data.usage);
   assert.deepEqual(JSON.parse(JSON.stringify(summary)), {
-    totalCredits: 40,
-    enabled: 1,
-    total: 2,
-    available: 1,
-    activeEmail: "alice@example.com",
+    totalCredits: 100,
+    enabled: 2,
+    total: 3,
+    available: 2,
+    routingMode: "Locked",
   });
   assert.equal(hooks.removeConfirmationMatches("alice@example.com", "alice@example.com"), true);
   assert.equal(hooks.removeConfirmationMatches("Alice@example.com", "alice@example.com"), false);
+});
+
+test("graph derivations use daily sessions and weighted current-month credit balance", () => {
+  const { hooks } = loadBundle();
+  const data = dashboard(null);
+
+  const sessionChart = hooks.deriveSessionChart(
+    data.usage.session_history,
+    data.snapshot.accounts,
+  );
+  assert.equal(sessionChart.peak, 4);
+  assert.equal(sessionChart.trackedSessions, 7);
+  assert.equal(sessionChart.days[0].heightPercent, 0);
+  assert.equal(sessionChart.days[2].heightPercent, 100);
+  assert.match(sessionChart.days[2].label, /2026-08-04: 4 sessions/);
+  assert.match(sessionChart.days[2].label, /Alice 2/);
+  assert.match(sessionChart.days[2].label, /Bob 2/);
+
+  const creditBalance = hooks.deriveCreditBalance(data.snapshot, data.usage);
+  assert.equal(creditBalance.totalCredits, 100);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(creditBalance.rows)),
+    [
+      {
+        email: "alice@example.com",
+        label: "Alice",
+        credits: 40,
+        share: 0.4,
+        targetShare: 1 / 3,
+      },
+      {
+        email: "bob@example.com",
+        label: "Bob",
+        credits: 60,
+        share: 0.6,
+        targetShare: 2 / 3,
+      },
+    ],
+  );
+  const locked = dashboard();
+  assert.equal(hooks.deriveCreditBalance(locked.snapshot, locked.usage).rows[0].targetShare, null);
+});
+
+test("session history keeps top accounts distinct and groups overflow into Other", () => {
+  const { hooks } = loadBundle();
+  const accounts = ["a", "b", "c", "d", "e", "f"].map((name) => ({
+    email: `${name}@example.com`,
+    label: name.toUpperCase(),
+  }));
+  const chart = hooks.deriveSessionChart(
+    {
+      timezone: "UTC",
+      tracked_sessions: 21,
+      by_day: [
+        {
+          date: "2026-08-06",
+          sessions: 21,
+          accounts: {
+            "a@example.com": 6,
+            "b@example.com": 5,
+            "c@example.com": 4,
+            "d@example.com": 3,
+            "e@example.com": 2,
+            "f@example.com": 1,
+          },
+        },
+      ],
+    },
+    accounts,
+  );
+
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(chart.series.map((series) => series.label))),
+    ["A", "B", "C", "D", "Other"],
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(chart.series.map((series) => series.total))),
+    [6, 5, 4, 3, 3],
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(chart.series.map((series) => series.color))),
+    [
+      "var(--chart-5)",
+      "var(--chart-1)",
+      "var(--chart-3)",
+      "var(--chart-2)",
+      "var(--chart-4)",
+    ],
+  );
+  assert.equal(new Set(chart.series.map((series) => series.color)).size, 5);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(chart.days[0].segments.map((segment) => segment.sessions))),
+    [6, 5, 4, 3, 3],
+  );
+});
+
+test("credit summaries never present local fallback counts as Analytics credits", () => {
+  const { hooks } = loadBundle();
+  const data = dashboard(null);
+  data.snapshot.accounts[0].credits_consumed = 9;
+  data.snapshot.accounts[0].source = "local";
+  data.snapshot.accounts[1].credits_consumed = 4;
+  data.snapshot.accounts[1].source = "local";
+  data.usage.totals.credits_consumed = null;
+  for (const account of data.usage.accounts) {
+    account.credits_consumed = null;
+    account.credit_share = null;
+  }
+
+  assert.equal(hooks.deriveSummary(data.snapshot, data.usage).totalCredits, null);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(hooks.deriveCreditBalance(data.snapshot, data.usage))),
+    { totalCredits: null, rows: [] },
+  );
+});
+
+test("credit targets keep partially missing accounts in the weight denominator", () => {
+  const { hooks } = loadBundle();
+  const data = dashboard(null);
+  data.usage.accounts[1].credits_consumed = null;
+  data.usage.accounts[1].credit_share = null;
+
+  const balance = hooks.deriveCreditBalance(data.snapshot, data.usage);
+  assert.equal(balance.rows.length, 1);
+  assert.equal(balance.rows[0].targetShare, 1 / 3);
+});
+
+test("usage overview renders restrained accessible charts and auto-only weight targets", () => {
+  const host = staticComponentHost();
+  const { hooks } = loadBundle();
+  const locked = dashboard();
+  const tree = hooks.UsageOverview({
+    host,
+    snapshot: locked.snapshot,
+    usage: locked.usage,
+  });
+
+  assert.deepEqual(
+    findElements(tree, "h3").map((heading) => heading.children[0]),
+    ["Sessions over time", "Credit balance"],
+  );
+  const dayList = findElements(tree, "ol")[0];
+  assert.equal(dayList.props["aria-label"], "Daily local sessions, last 30 days UTC");
+  const days = findElements(dayList, "li");
+  assert.equal(days.length, 5);
+  assert.match(days[2].props["aria-label"], /2026-08-04: 4 sessions/);
+  assert.equal(findElementsByClass(dayList, "kandev-augpool__day-label--end").length, 1);
+  const legend = findElementsByClass(tree, "kandev-augpool__session-legend")[0];
+  assert.equal(legend.props["aria-label"], "Session totals by account");
+  assert.equal(findElements(legend, "li").length, 2);
+  assert.equal(findElementsByClass(tree, "kandev-augpool__session-segment").length, 4);
+  assert.equal(
+    findElementsByClass(tree, "kandev-augpool__credit-target").length,
+    0,
+  );
+
+  const auto = dashboard(null);
+  const autoTree = hooks.UsageOverview({ host, snapshot: auto.snapshot, usage: auto.usage });
+  assert.equal(
+    findElementsByClass(autoTree, "kandev-augpool__credit-target").length,
+    2,
+  );
+});
+
+test("session graph explains when dated tracking has not started", () => {
+  const host = staticComponentHost();
+  const { hooks } = loadBundle();
+  const data = dashboard();
+  data.usage.session_history.tracked_sessions = 0;
+  for (const day of data.usage.session_history.by_day) {
+    day.sessions = 0;
+    day.accounts = {};
+  }
+
+  const tree = hooks.UsageOverview({ host, snapshot: data.snapshot, usage: data.usage });
+  const empty = findElementsByClass(tree, "kandev-augpool__graph-empty")[0];
+  assert.match(empty.children[0], /Tracking starts after Augpool upgrade/);
+});
+
+test("summary labels credits accurately and locked mode can return to auto", async () => {
+  const host = staticComponentHost();
+  const { hooks } = loadBundle();
+  const data = dashboard();
+  const summary = hooks.SummaryCards({ host, snapshot: data.snapshot, usage: data.usage });
+  assert.deepEqual(
+    findElementsByClass(summary, "kandev-augpool__eyebrow").map((node) => node.children[0]),
+    ["Month-to-date credits", "Enabled accounts", "Available now", "Routing mode", "Usage cache"],
+  );
+
+  const mutations = [];
+  const controller = {
+    getState: () => ({
+      phase: "ready",
+      data,
+      error: null,
+      refreshing: false,
+      pendingAction: null,
+      copyState: null,
+      copiedEmail: null,
+    }),
+    subscribe: () => () => {},
+    load() {},
+    refresh() {},
+    async mutate(payload) {
+      mutations.push(payload);
+      return true;
+    },
+  };
+  const page = hooks.AugpoolPage({ host, controller });
+  const autoButton = findElements(page, "button").find(
+    (button) => button.children[0] === "Use auto",
+  );
+  assert.ok(autoButton);
+  await autoButton.props.onClick();
+  assert.deepEqual(JSON.parse(JSON.stringify(mutations)), [{ action: "auto" }]);
 });
 
 test("clipboard helper uses API then secure temporary textarea fallback", async () => {

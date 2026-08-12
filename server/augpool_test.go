@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,18 +33,19 @@ func (r *recordingRunner) Run(_ context.Context, command CLICommand) (CLIOutput,
 
 func validStatsJSON() string {
 	return `{
-  "schema_version": 1,
-  "generated_at": "2026-08-06T18:00:00Z",
-  "home": "/tmp/aug pool",
-  "active_email": "alice@example.com",
-  "strategy": "least_used",
-  "usage": {
+	  "schema_version": 2,
+	  "generated_at": "2026-08-06T18:00:00Z",
+	  "home": "/tmp/aug pool",
+	  "mode": "locked",
+	  "locked_email": "alice@example.com",
+	  "strategy": "least_used",
+	  "usage": {
     "fetched_at": 1770000000,
     "age_seconds": 12,
     "ttl_seconds": 300,
     "stale": false,
-    "start_date": "2026-07-08",
-    "end_date": "2026-08-06",
+	    "start_date": "2026-08-01",
+	    "end_date": "2026-08-06",
     "refresh_attempted": true,
     "refresh_succeeded": true,
     "errors": [],
@@ -55,7 +57,7 @@ func validStatsJSON() string {
     "label": "Alice",
     "enabled": true,
     "weight": 1.5,
-    "active": true,
+	    "locked": true,
     "credits_consumed": 42,
     "score": 28,
     "local_uses": 3,
@@ -64,7 +66,53 @@ func validStatsJSON() string {
     "in_cooldown": false,
     "cooldown_until": null
   }]
-}`
+	}`
+}
+
+func validUsageJSON() string {
+	return `{
+	  "window": {
+	    "start_date": "2026-08-01",
+	    "end_date": "2026-08-06",
+	    "fetched_at": 1770000000,
+	    "age_seconds": 12
+	  },
+	  "totals": {
+	    "accounts": 2,
+	    "enabled_accounts": 2,
+	    "credits_consumed": 100,
+	    "local_sessions": 7
+	  },
+	  "session_history": {
+	    "timezone": "UTC",
+	    "start_date": "2026-07-08",
+	    "end_date": "2026-08-06",
+	    "tracked_sessions": 7,
+	    "by_day": [
+	      {"date":"2026-08-04","sessions":0,"accounts":{}},
+	      {"date":"2026-08-05","sessions":5,"accounts":{"alice@example.com":2,"bob@example.com":3}},
+	      {"date":"2026-08-06","sessions":2,"accounts":{"alice@example.com":2}}
+	    ]
+	  },
+	  "accounts": [{
+	    "email": "alice@example.com",
+	    "label": "Alice",
+	    "notes": "must stay server-side",
+	    "enabled": true,
+	    "locked": true,
+	    "weight": 1.5,
+	    "score": 28,
+	    "credits_consumed": 42,
+	    "credit_share": 0.42,
+	    "local_sessions": 3,
+	    "tracked_sessions_30d": 4,
+	    "last_selected_at": 1770000000,
+	    "source": "analytics",
+	    "in_cooldown": false,
+	    "cooldown_until": null
+	  }],
+	  "errors": []
+	}`
 }
 
 func TestAugpoolCLIStatsUsesResolvedExecutableHomeAndExactArgs(t *testing.T) {
@@ -80,7 +128,10 @@ func TestAugpoolCLIStatsUsesResolvedExecutableHomeAndExactArgs(t *testing.T) {
 
 	snapshot, err := client.Stats(context.Background(), true)
 	require.NoError(t, err)
-	require.Equal(t, 1, snapshot.SchemaVersion)
+	require.Equal(t, 2, snapshot.SchemaVersion)
+	require.Equal(t, "locked", snapshot.Mode)
+	require.Equal(t, "alice@example.com", *snapshot.LockedEmail)
+	require.True(t, snapshot.Accounts[0].Locked)
 	require.Equal(t, "alice@example.com", snapshot.Accounts[0].Email)
 	require.Len(t, runner.commands, 1)
 	require.Equal(t, "/usr/local/bin/augpool", runner.commands[0].Executable)
@@ -90,6 +141,63 @@ func TestAugpoolCLIStatsUsesResolvedExecutableHomeAndExactArgs(t *testing.T) {
 	require.Empty(t, runner.commands[0].Stdin)
 	require.Positive(t, runner.commands[0].StdoutLimit)
 	require.Positive(t, runner.commands[0].StderrLimit)
+}
+
+func TestAugpoolCLIUsageParsesDailyHistoryWithoutPrivateNotes(t *testing.T) {
+	runner := &recordingRunner{output: CLIOutput{Stdout: []byte(validUsageJSON())}}
+	client := NewAugpoolCLI(CLIOptions{Executable: "augpool", Runner: runner})
+
+	report, err := client.Usage(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "UTC", report.SessionHistory.Timezone)
+	require.Equal(t, 7, report.SessionHistory.TrackedSessions)
+	require.Equal(t, 5, report.SessionHistory.ByDay[1].Sessions)
+	require.Equal(t, 3, report.SessionHistory.ByDay[1].Accounts["bob@example.com"])
+	require.NotNil(t, report.Accounts[0].CreditShare)
+	require.Equal(t, 0.42, *report.Accounts[0].CreditShare)
+	require.Equal(t, []string{"usage", "--json"}, runner.commands[0].Args)
+	require.NotContains(t, fmt.Sprintf("%+v", report), "must stay server-side")
+}
+
+func TestAugpoolCLIRejectsNegativeDailySessions(t *testing.T) {
+	runner := &recordingRunner{output: CLIOutput{Stdout: []byte(`{
+		"window":{},
+		"totals":{"accounts":1,"enabled_accounts":1,"credits_consumed":null,"local_sessions":0},
+		"session_history":{"timezone":"UTC","start_date":"2026-07-08","end_date":"2026-08-06","tracked_sessions":0,"by_day":[{"date":"2026-08-06","sessions":-1,"accounts":{}}]},
+		"accounts":[],
+		"errors":[]
+	}`)}}
+	client := NewAugpoolCLI(CLIOptions{Executable: "augpool", Runner: runner})
+
+	_, err := client.Usage(context.Background())
+	require.ErrorIs(t, err, ErrInvalidOutput)
+}
+
+func TestAugpoolCLIRejectsUnknownRoutingMode(t *testing.T) {
+	tests := map[string]string{
+		"unknown mode": strings.Replace(validStatsJSON(), `"mode": "locked"`, `"mode": "manual"`, 1),
+		"locked without account": strings.Replace(
+			validStatsJSON(),
+			`"locked_email": "alice@example.com"`,
+			`"locked_email": null`,
+			1,
+		),
+		"auto with locked account": strings.Replace(
+			validStatsJSON(),
+			`"mode": "locked"`,
+			`"mode": "auto"`,
+			1,
+		),
+	}
+	for name, invalid := range tests {
+		t.Run(name, func(t *testing.T) {
+			runner := &recordingRunner{output: CLIOutput{Stdout: []byte(invalid)}}
+			client := NewAugpoolCLI(CLIOptions{Executable: "augpool", Runner: runner})
+
+			_, err := client.Stats(context.Background(), false)
+			require.ErrorIs(t, err, ErrInvalidOutput)
+		})
+	}
 }
 
 func TestAugpoolCLIFindsUserInstallWhenProcessPathMissesCLI(t *testing.T) {
@@ -152,10 +260,13 @@ func TestAugpoolCLIRealLifecycleIntegration(t *testing.T) {
 
 	snapshot, err := client.Stats(context.Background(), false)
 	require.NoError(t, err)
-	require.Equal(t, 1, snapshot.SchemaVersion)
+	require.Equal(t, 2, snapshot.SchemaVersion)
 	require.Len(t, snapshot.Accounts, 1)
 	require.False(t, snapshot.Accounts[0].Enabled)
 	require.InDelta(t, 2.5, snapshot.Accounts[0].Weight, 0)
+	report, err := client.Usage(context.Background())
+	require.NoError(t, err)
+	require.Len(t, report.SessionHistory.ByDay, 30)
 
 	exported, err := client.Export(context.Background(), "disposable@example.com")
 	require.NoError(t, err)
@@ -196,15 +307,17 @@ func TestAugpoolCLIMutationCommandsUseStableJSONContract(t *testing.T) {
 	enabled := false
 	weight := 2.75
 
-	require.NoError(t, client.Use(context.Background(), "alice@example.com"))
+	require.NoError(t, client.SetMode(context.Background(), "alice@example.com"))
+	require.NoError(t, client.SetMode(context.Background(), "auto"))
 	require.NoError(t, client.Update(context.Background(), "alice@example.com", &enabled, &weight))
 	require.NoError(t, client.Remove(context.Background(), "alice@example.com"))
 
-	require.Equal(t, []string{"use", "alice@example.com", "--json"}, runner.commands[0].Args)
+	require.Equal(t, []string{"mode", "alice@example.com", "--json"}, runner.commands[0].Args)
+	require.Equal(t, []string{"mode", "auto", "--json"}, runner.commands[1].Args)
 	require.Equal(t, []string{
 		"update", "alice@example.com", "--disable", "--weight", "2.75", "--json",
-	}, runner.commands[1].Args)
-	require.Equal(t, []string{"remove", "alice@example.com", "--json"}, runner.commands[2].Args)
+	}, runner.commands[2].Args)
+	require.Equal(t, []string{"remove", "alice@example.com", "--json"}, runner.commands[3].Args)
 }
 
 func TestAugpoolCLIImportErrorNeverIncludesCredential(t *testing.T) {
@@ -232,7 +345,7 @@ func TestAugpoolCLIExportAcceptsOneBase64URLToken(t *testing.T) {
 
 func TestAugpoolCLIRejectsMalformedStatsSchemaAndExport(t *testing.T) {
 	t.Run("schema", func(t *testing.T) {
-		runner := &recordingRunner{output: CLIOutput{Stdout: []byte(`{"schema_version":2}`)}}
+		runner := &recordingRunner{output: CLIOutput{Stdout: []byte(`{"schema_version":1}`)}}
 		client := NewAugpoolCLI(CLIOptions{Executable: "augpool", Runner: runner})
 		_, err := client.Stats(context.Background(), false)
 		require.ErrorIs(t, err, ErrUnsupportedSchema)
@@ -261,6 +374,23 @@ func TestAugpoolCLIUsesLongerRefreshTimeout(t *testing.T) {
 	require.Greater(t, runner.deadlines[1], runner.deadlines[0])
 }
 
+func TestAugpoolCLIUsageAllowsAutomaticRefreshTimeout(t *testing.T) {
+	runner := &deadlineRunner{
+		deadlines: make([]time.Duration, 0, 1),
+		output:    []byte(validUsageJSON()),
+	}
+	client := NewAugpoolCLI(CLIOptions{
+		Executable:     "augpool",
+		Runner:         runner,
+		CommandTimeout: 2 * time.Second,
+		RefreshTimeout: 10 * time.Second,
+	})
+
+	_, _ = client.Usage(context.Background())
+	require.Len(t, runner.deadlines, 1)
+	require.Greater(t, runner.deadlines[0], 5*time.Second)
+}
+
 func TestAugpoolCLIPreservesOutputLimitError(t *testing.T) {
 	runner := &recordingRunner{err: ErrOutputTooLarge}
 	client := NewAugpoolCLI(CLIOptions{Executable: "augpool", Runner: runner})
@@ -286,7 +416,7 @@ func TestAugpoolCLISerializesMutations(t *testing.T) {
 	for _, email := range []string{"alice@example.com", "bob@example.com"} {
 		go func(email string) {
 			<-start
-			done <- client.Use(context.Background(), email)
+			done <- client.SetMode(context.Background(), email)
 		}(email)
 	}
 	close(start)
@@ -297,6 +427,7 @@ func TestAugpoolCLISerializesMutations(t *testing.T) {
 
 type deadlineRunner struct {
 	deadlines []time.Duration
+	output    []byte
 }
 
 type concurrencyRunner struct {
@@ -324,5 +455,9 @@ func (r *deadlineRunner) Run(ctx context.Context, _ CLICommand) (CLIOutput, erro
 	if ok {
 		r.deadlines = append(r.deadlines, time.Until(deadline))
 	}
-	return CLIOutput{Stdout: []byte(validStatsJSON())}, nil
+	output := r.output
+	if output == nil {
+		output = []byte(validStatsJSON())
+	}
+	return CLIOutput{Stdout: output}, nil
 }
