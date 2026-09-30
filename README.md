@@ -24,7 +24,8 @@ export full credentials. Do not expose this plugin on an untrusted network.
 
 ## Requirements
 
-- Kandev with native plugins enabled.
+- Kandev with native plugins enabled. This plugin does not declare a minimum Kandev version.
+- Package binaries for Linux amd64/arm64, macOS amd64/arm64, and Windows amd64.
 - Augpool `0.3.0` or newer, providing `stats --json` schema version 2,
   `usage --json`, and the JSON mutation commands.
 - A stable, global Augpool installation visible to the Kandev process. A
@@ -104,31 +105,51 @@ ranking, atomic persistence, credential validation, and Analytics caching.
 
 ## Develop
 
-The Kandev backend SDK is currently consumed from a sibling monorepo checkout:
+The Go module uses a local replacement at `../kandev/apps/backend`. The file
+`.kandev-sdk-ref` pins this SDK source to host commit
+`570600439036e81f8e9e1c63f15c4abce8a6c846`, which contains host PR #3943.
+This source pin does not set a minimum Kandev release version.
 
 ```text
-work/
-├── kandev/                    # github.com/kdlbs/kandev
-└── kandev-plugin-augpool/     # this repo
+parent/
+├── kandev/                     # Kandev SDK checkout
+└── kandev-plugin-augpool/      # this repo
 ```
+
+From this repository, create and pin the sibling checkout:
+
+```sh
+git clone https://github.com/kdlbs/kandev.git ../kandev
+git -C ../kandev fetch origin "$(cat .kandev-sdk-ref)"
+git -C ../kandev checkout --detach "$(cat .kandev-sdk-ref)"
+make verify-sdk-pin
+```
+
+Use Go `1.26.0` and Node.js `24` for the documented checks. Install no Node
+packages. The UI tests use Node's built-in test runner.
 
 Then run:
 
 ```sh
+make check-format
 make test
 make vet
-make package-host
+make verify-package-host
+make verify-package
 ```
 
-`make test` runs Go backend tests, dependency-free Node bundle tests, CSS
-contract tests, and JavaScript syntax validation. `make package-host` writes
-`kandev-augpool-0.1.7.tar.gz` for the current OS/architecture.
+`make test` runs the Go and Node tests, CSS contract checks, JavaScript syntax
+validation, and negative package and release-version cases. Both package
+targets inspect the archive manifest, binary and UI file list, and SHA-256
+checksums. `make verify-package-host` packages the current platform.
+`make verify-package` cross-compiles every platform in `manifest.yaml`.
 
 Install the package through **Settings → Plugins → Install plugin**, enable it,
 then configure its executable/home. A direct local install is also possible:
 
 ```sh
-curl -F package=@kandev-augpool-0.1.7.tar.gz \
+PACKAGE="$(make -s package-file)"
+curl -F "package=@$PACKAGE" \
   http://localhost:<kandev-port>/api/plugins/install
 ```
 
@@ -143,10 +164,20 @@ curl -F package=@kandev-augpool-0.1.7.tar.gz \
 
 ## Release
 
-The included workflows verify and cross-compile Linux/macOS amd64+arm64 and
-Windows amd64 packages. Dispatch the release workflow from `main` or push a
-matching SemVer tag. Marketplace registry inclusion should happen only after
-the release exists and the trusted-host credential-export risk is reviewed.
+The pull request workflow tests the backend and UI. The build workflow creates
+and inspects all five declared platform binaries. Both workflows use the
+commit in `.kandev-sdk-ref`.
+
+Dispatch the release workflow from `main` to select a SemVer bump. The workflow
+checks the candidate package before it pushes release metadata and the tag. A
+pushed `vX.Y.Z` tag must match `manifest.yaml`, `Makefile`, and the package.
+Both paths run the backend and UI checks before publication.
+The published checksum file includes checksums for the package contents and
+the package archive.
+
+Do not publish until a stable Kandev release includes PR #3943. Validate this
+package against that release first. Add the plugin to a marketplace only after
+the release exists and the trusted-host credential-export risk has review.
 
 ## License
 
