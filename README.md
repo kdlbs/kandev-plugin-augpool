@@ -172,6 +172,8 @@ Dispatch the release workflow from `main` to select a SemVer bump. The workflow
 checks the candidate package before it pushes release metadata and the tag. A
 pushed `vX.Y.Z` tag must match `manifest.yaml`, `Makefile`, and the package.
 Both paths run the backend and UI checks before publication.
+The published checksum file includes checksums for the package contents and
+the package archive.
 
 Do not publish until a stable Kandev release includes PR #3943. Validate this
 package against that release first. Add the plugin to a marketplace only after

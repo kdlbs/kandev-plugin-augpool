@@ -5,7 +5,7 @@
 # When you rename the plugin, update BIN and VERSION to match manifest.yaml's
 # id and version (PKG_OUT is derived from them).
 BIN := bin/kandev-augpool
-VERSION := 0.1.6
+VERSION := 0.1.7
 STAGE := .build/stage
 PKG_OUT := kandev-augpool-$(VERSION).tar.gz
 KANDEV_SDK := ../kandev/apps/backend
