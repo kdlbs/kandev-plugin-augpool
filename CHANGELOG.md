@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0] - 2026-10-05
+
+### Changed
+
+- ci: pin SDK and harden package release checks (#5) (68e7559)
+
+
 ## [0.1.7] - 2026-09-30
 
 ### Changed
