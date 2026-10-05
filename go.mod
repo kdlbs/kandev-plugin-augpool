@@ -28,11 +28,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// The kandev SDK (pkg/pluginsdk) is not published as a standalone module
-// yet — this repo is developed against a local checkout of the kandev
-// monorepo. See README.md "Developing against the SDK" for the sibling-repo
-// layout this path assumes, and what changes once pkg/pluginsdk ships as its
-// own versioned module.
+// The kandev SDK (pkg/pluginsdk) is not published as a standalone module.
+// Use the sibling checkout at the commit recorded in .kandev-sdk-ref.
+// README.md documents the local path and the commands that check the pin.
 replace github.com/kandev/kandev => ../kandev/apps/backend
 
 tool github.com/kandev/kandev/cmd/plugin-pack
